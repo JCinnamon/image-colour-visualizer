@@ -1,26 +1,1253 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hexcode Color Palette Visualizer</title>
-    <script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    <script src="script.js" defer></script>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Colour Visualizer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary:      #2c5f7a;
+      --primary-dark: #1e4260;
+      --accent:       #1a9080;
+      --accent-light: #e6f4f1;
+      --text:         #2d3748;
+      --text-muted:   #64748b;
+      --bg:           #fafafa;
+      --bg-alt:       #f0f5f8;
+      --border:       #dde8ed;
+      --white:        #ffffff;
+      --sidebar-w:    272px;
+    }
+
+    html, body { height: 100%; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    /* ── NAV ── */
+    nav {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 0 1.5rem;
+      height: 50px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .nav-back { font-size: 0.8125rem; color: var(--text-muted); text-decoration: none; }
+    .nav-back:hover { color: var(--accent); }
+    .nav-title { font-size: 0.9375rem; font-weight: 600; color: var(--primary); }
+
+    /* ── LAYOUT ── */
+    .app-layout { display: flex; height: calc(100vh - 50px); overflow: hidden; }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      background: var(--white);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.875rem;
+    }
+    .section-label {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.4rem;
+      display: block;
+    }
+    .control-block { display: flex; flex-direction: column; gap: 0.45rem; }
+    .control-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .control-row label { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; }
+
+    /* Input tabs */
+    .tab-row {
+      display: flex;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 0.5rem;
+    }
+    .tab-btn {
+      flex: 1; padding: 0.35rem;
+      font-size: 0.8rem; font-weight: 500;
+      background: none; border: none; cursor: pointer;
+      color: var(--text-muted); transition: all 0.15s;
+    }
+    .tab-btn.active { background: var(--accent-light); color: var(--accent); }
+
+    textarea#colorInput {
+      width: 100%; height: 130px;
+      font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+      font-size: 0.75rem; line-height: 1.5;
+      padding: 0.5rem;
+      border: 1px solid var(--border); border-radius: 6px;
+      background: var(--bg); color: var(--text);
+      resize: vertical;
+    }
+    textarea#colorInput:focus { outline: none; border-color: var(--accent); }
+
+    .format-hint {
+      font-size: 0.72rem; color: var(--text-muted);
+      margin-top: 0.25rem; min-height: 16px;
+      transition: color 0.2s;
+    }
+
+    .upload-area {
+      border: 2px dashed var(--border); border-radius: 8px;
+      padding: 1.25rem 0.75rem; text-align: center;
+      cursor: pointer; color: var(--text-muted);
+      font-size: 0.8rem; transition: all 0.2s;
+    }
+    .upload-area:hover, .upload-area.drag-over {
+      border-color: var(--accent); background: var(--accent-light);
+    }
+    .upload-area .icon { font-size: 1.5rem; margin-bottom: 0.2rem; }
+
+    /* Column picker */
+    .col-picker { margin-top: 0.5rem; }
+    .col-mode { display: flex; gap: 0.35rem; margin-bottom: 0.5rem; }
+    .col-mode-btn {
+      flex: 1; font-size: 0.75rem; padding: 0.25rem 0.4rem;
+      border: 1px solid var(--border); border-radius: 4px;
+      background: none; cursor: pointer; color: var(--text-muted); transition: all 0.15s;
+    }
+    .col-mode-btn.active { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+    .col-picker label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.2rem; margin-top: 0.35rem; }
+
+    /* Selects */
+    select {
+      font-size: 0.8rem; padding: 0.3rem 0.5rem;
+      border: 1px solid var(--border); border-radius: 4px;
+      background: var(--bg); color: var(--text); cursor: pointer;
+    }
+    select:focus { outline: none; border-color: var(--accent); }
+    select.full { width: 100%; }
+
+    /* Range */
+    input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer; }
+
+    /* Toggle switch */
+    .switch { position: relative; display: inline-block; width: 32px; height: 18px; flex-shrink: 0; }
+    .switch input { display: none; }
+    .slider-track {
+      position: absolute; inset: 0;
+      background: var(--border); border-radius: 18px;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .slider-track::after {
+      content: ''; position: absolute;
+      top: 2px; left: 2px; width: 14px; height: 14px;
+      border-radius: 50%; background: var(--white); transition: transform 0.2s;
+    }
+    input:checked + .slider-track { background: var(--accent); }
+    input:checked + .slider-track::after { transform: translateX(14px); }
+    .toggle-row { display: flex; align-items: center; gap: 0.5rem; }
+    .toggle-label { font-size: 0.8rem; }
+
+    /* Buttons */
+    .btn-primary {
+      background: var(--accent); color: var(--white);
+      border: none; border-radius: 6px;
+      padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 500;
+      cursor: pointer; width: 100%; transition: background 0.2s;
+    }
+    .btn-primary:hover { background: #158070; }
+    .btn-primary:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; }
+    .btn-sm {
+      font-size: 0.75rem; padding: 0.35rem 0.7rem; margin-top: 0.4rem;
+      width: 100%;
+    }
+    .btn-secondary {
+      background: var(--white); color: var(--primary);
+      border: 1.5px solid var(--primary); border-radius: 6px;
+      padding: 0.375rem 0.75rem; font-size: 0.8rem; font-weight: 500;
+      cursor: pointer; flex: 1; transition: all 0.2s;
+    }
+    .btn-secondary:hover { background: var(--primary); color: var(--white); }
+
+    .export-row { display: flex; gap: 0.5rem; }
+    .color-count {
+      font-size: 0.8rem; color: var(--text-muted);
+      background: var(--bg-alt); border-radius: 4px;
+      padding: 0.3rem 0.6rem; text-align: center;
+    }
+    .color-count strong { color: var(--primary); font-weight: 600; }
+    .divider { border: none; border-top: 1px solid var(--border); }
+
+    /* ── VIZ AREA ── */
+    .viz-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    .viz-tabs {
+      display: flex; background: var(--white);
+      border-bottom: 1px solid var(--border); padding: 0 1rem;
+    }
+    .viz-tab {
+      padding: 0.7rem 1.1rem; font-size: 0.875rem; font-weight: 500;
+      color: var(--text-muted); background: none; border: none;
+      border-bottom: 2px solid transparent; cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .viz-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .viz-tab:hover:not(.active) { color: var(--primary); }
+
+    .sub-tabs-row {
+      display: none; background: var(--bg-alt);
+      border-bottom: 1px solid var(--border);
+      padding: 0.45rem 1rem; gap: 0.4rem; align-items: center;
+    }
+    .sub-tabs-row.visible { display: flex; }
+    .sub-tab {
+      padding: 0.2rem 0.65rem; font-size: 0.775rem; font-weight: 500;
+      color: var(--text-muted); background: var(--white);
+      border: 1px solid var(--border); border-radius: 20px;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .sub-tab.active { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+
+    .viz-container {
+      flex: 1; overflow: auto; position: relative; padding: 1rem;
+    }
+
+    .empty-state {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center; color: var(--text-muted);
+      pointer-events: none;
+    }
+    .empty-state .icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+    .empty-state p { font-size: 0.9375rem; }
+
+    #vizCanvas { display: block; max-width: 100%; }
+    #plotlyDiv { width: 100%; height: 100%; min-height: 520px; }
+
+    /* Tooltip */
+    #tooltip {
+      position: fixed; background: var(--primary-dark);
+      color: var(--white); padding: 4px 9px; border-radius: 4px;
+      font-size: 0.75rem; pointer-events: none; display: none;
+      z-index: 200; font-family: monospace; white-space: nowrap;
+    }
+
+    .hidden { display: none !important; }
+
+    /* Footer */
+    footer {
+      background: var(--primary-dark); color: rgba(255,255,255,0.5);
+      text-align: center; font-size: 0.8rem; padding: 0.6rem;
+    }
+    footer a { color: rgba(255,255,255,0.75); text-decoration: none; }
+    footer a:hover { color: #fff; }
+
+    @media (max-width: 640px) {
+      .sidebar { width: 220px; }
+      :root { --sidebar-w: 220px; }
+    }
+  </style>
 </head>
 <body>
-    <h1>Hexcode Visualizer</h1>
-    <space><h2>Create a color palette from hexcodes</h2></space>
-    <textarea id="hexInput" rows="10" cols="30" placeholder="Paste your hexcodes here, one per line"></textarea>
-    <br>
-    <label for="numClusters">Number of clusters:</label>
-    <input type="number" id="numClusters" min="1" max="20" value="5">
-    <br>
-    <button onclick="processColors()">Generate Palette</button>
-    <div id="loading" class="hidden">Processing...</div>
-    <div id="error" class="hidden"></div>
-    <div id="result"></div>
-     <space><p>by <a href="https://jcinnamon.github.io/">J Cinnamon</a><p></space>
+
+<nav>
+  <a href="https://jcinnamon.github.io/" class="nav-back">← jcinnamon.github.io</a>
+  <span class="nav-title">Colour Visualizer</span>
+  <span></span>
+</nav>
+
+<div id="tooltip"></div>
+
+<div class="app-layout">
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+
+    <!-- Input -->
+    <div>
+      <span class="section-label">Input</span>
+      <div class="tab-row">
+        <button class="tab-btn active" data-input="paste">Paste</button>
+        <button class="tab-btn" data-input="csv">CSV</button>
+      </div>
+
+      <div id="panePaste">
+        <textarea id="colorInput" placeholder="One color per line:&#10;#FF8800&#10;255, 128, 0&#10;30, 0.8, 0.6&#10;hsl(210, 60%, 50%)"></textarea>
+        <div class="format-hint" id="formatHint">Accepts hex · RGB · HSL · HSV</div>
+        <button class="btn-primary btn-sm" id="btnLoad">Load colors</button>
+      </div>
+
+      <div id="paneCsv" class="hidden">
+        <div class="upload-area" id="uploadArea">
+          <div class="icon">📂</div>
+          <div>Drop CSV / click to upload</div>
+          <input type="file" id="csvFile" accept=".csv,.tsv" style="display:none">
+        </div>
+        <div id="csvPicker" class="hidden col-picker">
+          <div class="col-mode">
+            <button class="col-mode-btn active" data-colmode="single">Single col</button>
+            <button class="col-mode-btn" data-colmode="rgb">R / G / B</button>
+          </div>
+          <div id="singleColPicker">
+            <label>Color column</label>
+            <select id="colSingle" class="full"></select>
+          </div>
+          <div id="rgbColPicker" class="hidden">
+            <label>Red column</label><select id="colR" class="full"></select>
+            <label>Green column</label><select id="colG" class="full"></select>
+            <label>Blue column</label><select id="colB" class="full"></select>
+          </div>
+          <button class="btn-primary btn-sm" id="btnLoadCsv">Load colors</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="color-count" id="colorCount">No colors loaded</div>
+    <hr class="divider">
+
+    <!-- Clustering -->
+    <div>
+      <span class="section-label">Clustering</span>
+      <div class="control-block">
+        <div class="toggle-row">
+          <label class="switch">
+            <input type="checkbox" id="enableClustering" checked>
+            <span class="slider-track"></span>
+          </label>
+          <span class="toggle-label">K-means enabled</span>
+        </div>
+        <div id="clusterControls" class="control-block">
+          <div class="control-row">
+            <label>Space</label>
+            <select id="clusterSpace">
+              <option value="lab">LAB (perceptual)</option>
+              <option value="hsl">HSL</option>
+            </select>
+          </div>
+          <div>
+            <div class="control-row" style="margin-bottom:0.2rem">
+              <label>Clusters</label>
+              <strong id="kLabel" style="font-size:0.875rem;color:var(--accent)">8</strong>
+            </div>
+            <input type="range" id="numClusters" min="2" max="30" value="8">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Sort -->
+    <div>
+      <span class="section-label">Sort by</span>
+      <select id="sortBy" class="full">
+        <option value="cluster">Cluster, then hue</option>
+        <option value="hue">Hue</option>
+        <option value="saturation">Saturation</option>
+        <option value="lightness">Lightness</option>
+        <option value="luminance">Perceptual luminance</option>
+        <option value="none">As entered</option>
+      </select>
+    </div>
+
+    <hr class="divider">
+    <button class="btn-primary" id="btnVisualize" disabled>Visualize</button>
+
+    <!-- Export -->
+    <div id="exportSection" class="hidden">
+      <hr class="divider">
+      <span class="section-label">Export</span>
+      <div class="export-row">
+        <button class="btn-secondary" id="btnExportPNG">↓ PNG</button>
+        <button class="btn-secondary" id="btnExportCSV">↓ CSV</button>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── VIZ AREA ── -->
+  <main class="viz-area">
+    <div class="viz-tabs">
+      <button class="viz-tab active" data-viz="strip">Strip</button>
+      <button class="viz-tab" data-viz="grid">Grid</button>
+      <button class="viz-tab" data-viz="scatter">Scatter</button>
+      <button class="viz-tab" data-viz="wheel">Wheel</button>
+    </div>
+
+    <div class="sub-tabs-row" id="scatterSubTabs">
+      <button class="sub-tab active" data-mode="hl">H × L</button>
+      <button class="sub-tab" data-mode="hs">H × S</button>
+      <button class="sub-tab" data-mode="3d">3D (H / S / L)</button>
+    </div>
+
+    <div class="viz-container" id="vizContainer">
+      <div class="empty-state" id="emptyState">
+        <div class="icon">🎨</div>
+        <p>Paste colors or upload a CSV to begin</p>
+      </div>
+      <canvas id="vizCanvas" class="hidden"></canvas>
+      <div id="plotlyDiv" class="hidden"></div>
+    </div>
+  </main>
+
+</div>
+
+<footer>
+  <a href="https://jcinnamon.github.io/">J Cinnamon</a>
+  &nbsp;·&nbsp; Colour Visualizer &nbsp;·&nbsp; UBC Okanagan
+</footer>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════
+// COLOR MATH
+// ═══════════════════════════════════════════════════════════
+
+function rgbToHex(r, g, b) {
+  return '#' + [r, g, b]
+    .map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0, s = 0;
+  const l = (mx + mn) / 2;
+  if (d > 1e-10) {
+    s = d / (1 - Math.abs(2 * l - 1));
+    if      (mx === r) h = ((g - b) / d + 6) % 6;
+    else if (mx === g) h = (b - r) / d + 2;
+    else               h = (r - g) / d + 4;
+    h *= 60;
+  }
+  return { h, s, l };
+}
+
+function hslToRgb(h, s, l) {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if      (h < 60)  { r=c; g=x; b=0; }
+  else if (h < 120) { r=x; g=c; b=0; }
+  else if (h < 180) { r=0; g=c; b=x; }
+  else if (h < 240) { r=0; g=x; b=c; }
+  else if (h < 300) { r=x; g=0; b=c; }
+  else              { r=c; g=0; b=x; }
+  return {
+    r: Math.round((r + m) * 255),
+    g: Math.round((g + m) * 255),
+    b: Math.round((b + m) * 255)
+  };
+}
+
+function hsvToRgb(h, s, v) {
+  const c = v * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = v - c;
+  let r = 0, g = 0, b = 0;
+  if      (h < 60)  { r=c; g=x; b=0; }
+  else if (h < 120) { r=x; g=c; b=0; }
+  else if (h < 180) { r=0; g=c; b=x; }
+  else if (h < 240) { r=0; g=x; b=c; }
+  else if (h < 300) { r=x; g=0; b=c; }
+  else              { r=c; g=0; b=x; }
+  return {
+    r: Math.round((r + m) * 255),
+    g: Math.round((g + m) * 255),
+    b: Math.round((b + m) * 255)
+  };
+}
+
+function linearize(c) {
+  c /= 255;
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+function rgbToLab(r, g, b) {
+  const rl = linearize(r), gl = linearize(g), bl = linearize(b);
+  let x = (rl*0.4124564 + gl*0.3575761 + bl*0.1804375) / 0.95047;
+  let y = (rl*0.2126729 + gl*0.7151522 + bl*0.0721750) / 1.00000;
+  let z = (rl*0.0193339 + gl*0.1191920 + bl*0.9503041) / 1.08883;
+  const f = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+  return { L: 116*f(y) - 16, a: 500*(f(x) - f(y)), bv: 200*(f(y) - f(z)) };
+}
+
+function perceptualLum(r, g, b) {
+  return 0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b);
+}
+
+function makeColor(r, g, b) {
+  r = Math.round(Math.max(0, Math.min(255, r)));
+  g = Math.round(Math.max(0, Math.min(255, g)));
+  b = Math.round(Math.max(0, Math.min(255, b)));
+  const hsl = rgbToHsl(r, g, b);
+  const lab = rgbToLab(r, g, b);
+  return {
+    r, g, b,
+    hex: rgbToHex(r, g, b),
+    h: hsl.h, s: hsl.s, l: hsl.l,
+    L: lab.L, a: lab.a, bv: lab.bv,
+    lum: perceptualLum(r, g, b)
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+// INPUT PARSING
+// ═══════════════════════════════════════════════════════════
+
+const RE_HEX       = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i;
+const RE_RGB_INT   = /^(\d{1,3})\s*[,\s]\s*(\d{1,3})\s*[,\s]\s*(\d{1,3})$/;
+const RE_RGB_FLOAT = /^(0?\.\d+|1(?:\.0*)?)\s*[,\s]\s*(0?\.\d+|1(?:\.0*)?)\s*[,\s]\s*(0?\.\d+|1(?:\.0*)?)$/;
+const RE_HSL_CSS   = /^hsl\s*\(\s*(\d+\.?\d*)\s*,\s*(\d+\.?\d*)%?\s*,\s*(\d+\.?\d*)%?\s*\)$/i;
+const RE_HSV_CSS   = /^hsv\s*\(\s*(\d+\.?\d*)\s*,\s*(\d+\.?\d*)%?\s*,\s*(\d+\.?\d*)%?\s*\)$/i;
+const RE_HSX_RAW   = /^(\d{1,3}\.?\d*)\s*[,\s]\s*(\d+\.?\d*)\s*[,\s]\s*(\d+\.?\d*)$/;
+
+function detectFormat(line) {
+  line = line.trim();
+  if (!line) return null;
+  if (RE_HEX.test(line))       return 'hex';
+  if (RE_HSL_CSS.test(line))   return 'hsl-css';
+  if (RE_HSV_CSS.test(line))   return 'hsv-css';
+  if (RE_RGB_FLOAT.test(line)) return 'rgb-float';
+  if (RE_RGB_INT.test(line))   return 'rgb-int';
+  if (RE_HSX_RAW.test(line))   return 'hsl-raw';
+  return null;
+}
+
+function parseLine(line) {
+  line = line.trim();
+  if (!line) return null;
+  const fmt = detectFormat(line);
+  if (!fmt) return null;
+
+  if (fmt === 'hex') {
+    let h = line.replace('#', '');
+    if (h.length === 3) h = h.split('').map(c => c+c).join('');
+    const n = parseInt(h, 16);
+    return makeColor((n >> 16) & 255, (n >> 8) & 255, n & 255);
+  }
+  if (fmt === 'hsl-css') {
+    const m = line.match(RE_HSL_CSS);
+    const rgb = hslToRgb(+m[1], +m[2] / 100, +m[3] / 100);
+    return makeColor(rgb.r, rgb.g, rgb.b);
+  }
+  if (fmt === 'hsv-css') {
+    const m = line.match(RE_HSV_CSS);
+    const rgb = hsvToRgb(+m[1], +m[2] / 100, +m[3] / 100);
+    return makeColor(rgb.r, rgb.g, rgb.b);
+  }
+  if (fmt === 'rgb-float') {
+    const m = line.match(RE_RGB_FLOAT);
+    return makeColor(Math.round(+m[1]*255), Math.round(+m[2]*255), Math.round(+m[3]*255));
+  }
+  if (fmt === 'rgb-int') {
+    const m = line.match(RE_RGB_INT);
+    const [r, g, b] = [+m[1], +m[2], +m[3]];
+    if (r > 255 || g > 255 || b > 255) return null;
+    return makeColor(r, g, b);
+  }
+  if (fmt === 'hsl-raw') {
+    const m = line.match(RE_HSX_RAW);
+    const h = +m[1], s = +m[2], lv = +m[3];
+    const sn = s > 1 ? s / 100 : s;
+    const ln = lv > 1 ? lv / 100 : lv;
+    const rgb = hslToRgb(h, sn, ln);
+    return makeColor(rgb.r, rgb.g, rgb.b);
+  }
+  return null;
+}
+
+function parsePastedInput(text) {
+  const lines = text.split(/[\n\r;]+/).map(l => l.trim()).filter(Boolean);
+  const colors = [], failed = [];
+  for (const line of lines) {
+    const c = parseLine(line);
+    if (c) colors.push(c); else if (line) failed.push(line);
+  }
+  return { colors, failed };
+}
+
+// ═══════════════════════════════════════════════════════════
+// CSV PARSING
+// ═══════════════════════════════════════════════════════════
+
+function parseCSVText(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return { headers: [], rows: [] };
+  const delim = text.includes('\t') ? '\t' : ',';
+  const strip = s => s.trim().replace(/^"|"$/g, '');
+  const headers = lines[0].split(delim).map(strip);
+  const rows = lines.slice(1).map(line => line.split(delim).map(strip));
+  return { headers, rows };
+}
+
+function guessColorColumns(headers, rows) {
+  const sample = rows.slice(0, Math.min(50, rows.length));
+  return headers.map((h, i) => {
+    let score = 0;
+    for (const row of sample) {
+      const v = (row[i] || '').trim();
+      if (RE_HEX.test(v)) score += 3;
+      else if (RE_RGB_INT.test(v) || RE_RGB_FLOAT.test(v)) score += 2;
+    }
+    return { name: h, index: i, score: score / sample.length };
+  }).sort((a, b) => b.score - a.score);
+}
+
+function colorsFromCsvSingle(rows, colIdx) {
+  const out = [];
+  for (const row of rows) {
+    const c = parseLine((row[colIdx] || '').trim());
+    if (c) out.push(c);
+  }
+  return out;
+}
+
+function colorsFromCsvRgb(rows, ri, gi, bi) {
+  const out = [];
+  for (const row of rows) {
+    const r = parseFloat(row[ri]), g = parseFloat(row[gi]), b = parseFloat(row[bi]);
+    if (isNaN(r) || isNaN(g) || isNaN(b)) continue;
+    const scale = (r > 1 || g > 1 || b > 1) ? 1 : 255;
+    out.push(makeColor(r * scale, g * scale, b * scale));
+  }
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════════
+// K-MEANS CLUSTERING (K-means++ init, pure JS)
+// ═══════════════════════════════════════════════════════════
+
+function buildFeatures(colors, space) {
+  if (space === 'lab') {
+    // Normalize L: 0–100 → 0–1, a/b: –128–127 → 0–1
+    return colors.map(c => [c.L / 100, (c.a + 128) / 255, (c.bv + 128) / 255]);
+  }
+  // HSL: encode hue circularly to avoid 0°/360° discontinuity
+  return colors.map(c => {
+    const rad = c.h * Math.PI / 180;
+    return [Math.sin(rad) * c.s, Math.cos(rad) * c.s, c.l];
+  });
+}
+
+function sqDist(a, b) {
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d += (a[i] - b[i]) ** 2;
+  return d;
+}
+
+function kmeans(colors, k, space) {
+  const n = colors.length;
+  if (n <= k) return colors.map((_, i) => i);
+  const features = buildFeatures(colors, space);
+  const dim = features[0].length;
+
+  // K-means++ initialization
+  const centroids = [];
+  centroids.push([...features[Math.floor(Math.random() * n)]]);
+  while (centroids.length < k) {
+    const dists = features.map(f => Math.min(...centroids.map(c => sqDist(f, c))));
+    const total = dists.reduce((a, b) => a + b, 0);
+    let rand = Math.random() * total, cumul = 0;
+    for (let i = 0; i < n; i++) {
+      cumul += dists[i];
+      if (cumul >= rand) { centroids.push([...features[i]]); break; }
+    }
+    if (centroids.length < k) centroids.push([...features[Math.floor(Math.random() * n)]]);
+  }
+
+  const labels = new Array(n).fill(0);
+  const MAX_ITER = 80;
+
+  for (let iter = 0; iter < MAX_ITER; iter++) {
+    // Assignment
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      let best = 0, bestD = Infinity;
+      for (let j = 0; j < k; j++) {
+        const d = sqDist(features[i], centroids[j]);
+        if (d < bestD) { bestD = d; best = j; }
+      }
+      if (labels[i] !== best) { labels[i] = best; changed = true; }
+    }
+    if (!changed) break;
+
+    // Update centroids
+    const sums = Array.from({ length: k }, () => new Array(dim).fill(0));
+    const counts = new Array(k).fill(0);
+    for (let i = 0; i < n; i++) {
+      counts[labels[i]]++;
+      for (let d = 0; d < dim; d++) sums[labels[i]][d] += features[i][d];
+    }
+    for (let j = 0; j < k; j++) {
+      if (counts[j] > 0)
+        for (let d = 0; d < dim; d++) centroids[j][d] = sums[j][d] / counts[j];
+    }
+  }
+
+  // Re-order cluster indices by mean hue (makes cluster coloring intuitive)
+  const meanHues = Array.from({ length: k }, (_, j) => {
+    const idx = labels.reduce((acc, l, i) => l === j ? [...acc, i] : acc, []);
+    if (!idx.length) return 0;
+    // Circular mean for hue
+    const sc = idx.reduce((s, i) => s + Math.sin(colors[i].h * Math.PI / 180), 0) / idx.length;
+    const cc = idx.reduce((s, i) => s + Math.cos(colors[i].h * Math.PI / 180), 0) / idx.length;
+    let mh = Math.atan2(sc, cc) * 180 / Math.PI;
+    return mh < 0 ? mh + 360 : mh;
+  });
+  const order = meanHues.map((h, i) => ({ h, i })).sort((a, b) => a.h - b.h);
+  const remap = new Array(k);
+  order.forEach((o, ni) => { remap[o.i] = ni; });
+  return labels.map(l => remap[l]);
+}
+
+// ═══════════════════════════════════════════════════════════
+// SORTING
+// ═══════════════════════════════════════════════════════════
+
+function sortColors(colors, labels, prop) {
+  const pairs = colors.map((c, i) => ({ c, label: labels[i] }));
+  if (prop === 'none') return pairs;
+  const keys = {
+    cluster:    p => [p.label,  p.c.h, p.c.s, p.c.l],
+    hue:        p => [p.c.h,    p.c.s, p.c.l],
+    saturation: p => [p.c.s,    p.c.h, p.c.l],
+    lightness:  p => [p.c.l,    p.c.h],
+    luminance:  p => [p.c.lum,  p.c.h],
+  };
+  const key = keys[prop] || keys.cluster;
+  return [...pairs].sort((a, b) => {
+    const ka = key(a), kb = key(b);
+    for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] - kb[i];
+    return 0;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// VISUALIZATIONS
+// ═══════════════════════════════════════════════════════════
+
+// ── STRIP ──
+function renderStrip(canvas, sorted, numClusters) {
+  const n = sorted.length;
+  const W = canvas.width, H = canvas.height;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  let prevLabel = null;
+  for (let i = 0; i < n; i++) {
+    const { c, label } = sorted[i];
+    const x0 = (i / n) * W;
+    const x1 = ((i + 1) / n) * W;
+    ctx.fillStyle = c.hex;
+    ctx.fillRect(x0, 0, x1 - x0 + 0.5, H);
+
+    // Cluster divider (only when bars are wide enough to be visible)
+    if (prevLabel !== null && label !== prevLabel && (W / n) > 1) {
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.fillRect(Math.round(x0) - 1, 0, 2, H);
+    }
+    prevLabel = label;
+  }
+}
+
+// ── GRID ──
+function renderGrid(canvas, sorted) {
+  const n = sorted.length;
+  const W = canvas.width;
+  const ctx = canvas.getContext('2d');
+
+  // Compute tile size: target roughly square overall, tile 8–48px
+  const targetTile = Math.max(8, Math.min(48, Math.round(W / Math.ceil(Math.sqrt(n)))));
+  const cols = Math.max(1, Math.floor(W / targetTile));
+  const tile = Math.floor(W / cols);
+  const rows = Math.ceil(n / cols);
+  canvas.height = rows * tile;
+  ctx.clearRect(0, 0, W, canvas.height);
+
+  for (let i = 0; i < n; i++) {
+    const col = i % cols, row = Math.floor(i / cols);
+    ctx.fillStyle = sorted[i].c.hex;
+    ctx.fillRect(col * tile, row * tile, tile, tile);
+  }
+}
+
+// ── WHEEL ──
+function renderWheel(canvas, sorted) {
+  const W = canvas.width;
+  const H = Math.min(W, 680);
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const cx = W / 2, cy = H / 2;
+  const maxR = Math.min(cx, cy) - 20;
+
+  // Dark background
+  ctx.fillStyle = '#111827';
+  ctx.fillRect(0, 0, W, H);
+
+  // Hue ring guide (subtle)
+  for (let deg = 0; deg < 360; deg += 5) {
+    const ang = (deg - 90) * Math.PI / 180;
+    const rgb = hslToRgb(deg, 1, 0.5);
+    ctx.beginPath();
+    ctx.arc(cx + maxR * Math.cos(ang), cy + maxR * Math.sin(ang), 2, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.25)`;
+    ctx.fill();
+  }
+
+  // Hue degree labels
+  ctx.save();
+  ctx.font = '10px Inter, sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let deg = 0; deg < 360; deg += 30) {
+    const ang = (deg - 90) * Math.PI / 180;
+    const r = maxR + 14;
+    ctx.fillText(deg + '°', cx + r * Math.cos(ang), cy + r * Math.sin(ang));
+  }
+  ctx.restore();
+
+  // Plot each color: angle = hue, radius = saturation (min 5% to keep unsaturated visible near center)
+  const dotR = sorted.length > 3000 ? 1.5 : sorted.length > 800 ? 2 : 3;
+  for (const { c } of sorted) {
+    const ang = (c.h - 90) * Math.PI / 180;
+    const r = (c.s * 0.9 + 0.07) * maxR;
+    ctx.beginPath();
+    ctx.arc(cx + r * Math.cos(ang), cy + r * Math.sin(ang), dotR, 0, Math.PI * 2);
+    ctx.fillStyle = c.hex;
+    ctx.fill();
+  }
+
+  // Center neutral zone
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR * 0.07);
+  grad.addColorStop(0, 'rgba(255,255,255,0.15)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.beginPath();
+  ctx.arc(cx, cy, maxR * 0.07, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Legend
+  ctx.save();
+  ctx.font = '10px Inter, sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.textAlign = 'left';
+  ctx.fillText('Angle = Hue · Radius = Saturation', 10, H - 10);
+  ctx.restore();
+}
+
+// ── SCATTER ──
+function renderScatter(container, sorted, mode, numClusters) {
+  const markerColors  = sorted.map(p => p.c.hex);
+  // Cluster outline color (distinct hue per cluster)
+  const outlineColors = numClusters > 1
+    ? sorted.map(p => `hsl(${(p.label / numClusters) * 360}, 65%, 45%)`)
+    : markerColors;
+
+  const hoverText = sorted.map(p =>
+    `${p.c.hex}<br>H ${p.c.h.toFixed(0)}° S ${(p.c.s*100).toFixed(0)}% L ${(p.c.l*100).toFixed(0)}%`
+  );
+
+  let traces, layout;
+  const plotBg = getComputedStyle(document.documentElement).getPropertyValue('--bg-alt').trim() || '#f0f5f8';
+
+  if (mode === '3d') {
+    traces = [{
+      type: 'scatter3d', mode: 'markers',
+      x: sorted.map(p => p.c.h),
+      y: sorted.map(p => p.c.s),
+      z: sorted.map(p => p.c.l),
+      text: hoverText, hoverinfo: 'text',
+      marker: {
+        color: markerColors, size: 3.5, opacity: 0.85,
+        line: { color: outlineColors, width: 0.5 }
+      }
+    }];
+    layout = {
+      scene: {
+        xaxis: { title: 'Hue (°)', range: [0, 360] },
+        yaxis: { title: 'Saturation', range: [0, 1] },
+        zaxis: { title: 'Lightness', range: [0, 1] },
+        bgcolor: '#f8fafc',
+        aspectratio: { x: 1.8, y: 1, z: 1 }
+      },
+      margin: { l: 0, r: 0, b: 0, t: 0 },
+      paper_bgcolor: 'transparent'
+    };
+  } else {
+    const xKey = 'h', yKey = mode === 'hs' ? 's' : 'l';
+    const yLabel = mode === 'hs' ? 'Saturation' : 'Lightness';
+    traces = [{
+      type: 'scattergl', mode: 'markers',
+      x: sorted.map(p => p.c[xKey]),
+      y: sorted.map(p => p.c[yKey]),
+      text: hoverText, hoverinfo: 'text',
+      marker: {
+        color: markerColors, size: 6, opacity: 0.8,
+        line: { color: outlineColors, width: 1 }
+      }
+    }];
+    layout = {
+      xaxis: { title: 'Hue (°)', range: [0, 360], gridcolor: '#dde8ed', zeroline: false },
+      yaxis: { title: yLabel, range: [0, 1], gridcolor: '#dde8ed', zeroline: false },
+      margin: { l: 52, r: 16, b: 46, t: 16 },
+      paper_bgcolor: 'transparent',
+      plot_bgcolor: '#f0f5f8',
+      font: { family: 'Inter, sans-serif', size: 11, color: '#64748b' }
+    };
+  }
+
+  Plotly.react(container, traces, layout, {
+    responsive: true,
+    displayModeBar: false,
+    scrollZoom: true
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// CANVAS HOVER TOOLTIP
+// ═══════════════════════════════════════════════════════════
+
+const tooltip = document.getElementById('tooltip');
+
+function attachStripHover(canvas, sorted) {
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const idx = Math.max(0, Math.min(sorted.length - 1, Math.floor((x / rect.width) * sorted.length)));
+    const { c, label } = sorted[idx];
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.clientX + 12) + 'px';
+    tooltip.style.top  = (e.clientY - 8) + 'px';
+    tooltip.textContent = `${c.hex}  H${c.h.toFixed(0)}° S${(c.s*100).toFixed(0)}% L${(c.l*100).toFixed(0)}%`;
+  });
+  canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+}
+
+function attachGridHover(canvas, sorted) {
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const W = canvas.width;
+    const n = sorted.length;
+    const targetTile = Math.max(8, Math.min(48, Math.round(W / Math.ceil(Math.sqrt(n)))));
+    const cols = Math.max(1, Math.floor(W / targetTile));
+    const tile = Math.floor(W / cols);
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top)  * (canvas.height / rect.height);
+    const col = Math.floor(x / tile), row = Math.floor(y / tile);
+    const idx = row * cols + col;
+    if (idx >= 0 && idx < sorted.length) {
+      const { c } = sorted[idx];
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX + 12) + 'px';
+      tooltip.style.top  = (e.clientY - 8) + 'px';
+      tooltip.textContent = `${c.hex}  H${c.h.toFixed(0)}° S${(c.s*100).toFixed(0)}% L${(c.l*100).toFixed(0)}%`;
+    }
+  });
+  canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+}
+
+// ═══════════════════════════════════════════════════════════
+// APP STATE & UI
+// ═══════════════════════════════════════════════════════════
+
+const state = {
+  rawColors:  [],
+  sorted:     [],
+  labels:     [],
+  vizType:    'strip',
+  scatterMode:'hl',
+  csvData:    null,
+  colMode:    'single',
+};
+
+// ─── Element refs ───
+const $ = id => document.getElementById(id);
+const colorInput      = $('colorInput');
+const formatHint      = $('formatHint');
+const colorCount      = $('colorCount');
+const btnLoad         = $('btnLoad');
+const btnVisualize    = $('btnVisualize');
+const enableClustering= $('enableClustering');
+const clusterControls = $('clusterControls');
+const clusterSpace    = $('clusterSpace');
+const numClusters     = $('numClusters');
+const kLabel          = $('kLabel');
+const sortBy          = $('sortBy');
+const exportSection   = $('exportSection');
+const btnExportPNG    = $('btnExportPNG');
+const btnExportCSV    = $('btnExportCSV');
+const vizContainer    = $('vizContainer');
+const emptyState      = $('emptyState');
+const vizCanvas       = $('vizCanvas');
+const plotlyDiv       = $('plotlyDiv');
+const scatterSubTabs  = $('scatterSubTabs');
+const uploadArea      = $('uploadArea');
+const csvFile         = $('csvFile');
+const csvPicker       = $('csvPicker');
+const colSingle       = $('colSingle');
+const colR            = $('colR');
+const colG            = $('colG');
+const colB            = $('colB');
+
+// ─── Input tabs ───
+document.querySelectorAll('[data-input]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-input]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const t = btn.dataset.input;
+    $('panePaste').classList.toggle('hidden', t !== 'paste');
+    $('paneCsv').classList.toggle('hidden', t !== 'csv');
+  });
+});
+
+// ─── Clustering toggle ───
+enableClustering.addEventListener('change', () => {
+  clusterControls.style.opacity = enableClustering.checked ? '1' : '0.4';
+  clusterControls.style.pointerEvents = enableClustering.checked ? '' : 'none';
+});
+
+numClusters.addEventListener('input', () => { kLabel.textContent = numClusters.value; });
+
+// ─── Paste hint ───
+colorInput.addEventListener('input', () => {
+  const first = colorInput.value.trim().split('\n').find(l => l.trim());
+  if (!first) { formatHint.textContent = 'Accepts hex · RGB · HSL · HSV'; formatHint.style.color = ''; return; }
+  const fmt = detectFormat(first.trim());
+  const labels = {
+    'hex': '✓ Hex (#RRGGBB)', 'rgb-int': '✓ RGB integers 0–255',
+    'rgb-float': '✓ RGB floats 0–1', 'hsl-css': '✓ HSL CSS',
+    'hsv-css': '✓ HSV CSS', 'hsl-raw': '✓ HSL / HSV values'
+  };
+  if (fmt) {
+    formatHint.textContent = labels[fmt] || '✓ Recognized';
+    formatHint.style.color = 'var(--accent)';
+  } else {
+    formatHint.textContent = '? First line not recognized — check format';
+    formatHint.style.color = '#e87c3e';
+  }
+});
+
+// ─── Load pasted ───
+btnLoad.addEventListener('click', () => {
+  const { colors, failed } = parsePastedInput(colorInput.value);
+  if (!colors.length) { setCount('No valid colors found'); return; }
+  state.rawColors = colors;
+  state.labels = new Array(colors.length).fill(0);
+  setCount(colors.length, failed.length);
+  btnVisualize.disabled = false;
+});
+
+// ─── CSV upload ───
+uploadArea.addEventListener('click', () => csvFile.click());
+uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+uploadArea.addEventListener('drop', e => {
+  e.preventDefault(); uploadArea.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) handleCsvFile(e.dataTransfer.files[0]);
+});
+csvFile.addEventListener('change', e => { if (e.target.files[0]) handleCsvFile(e.target.files[0]); });
+
+function handleCsvFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const { headers, rows } = parseCSVText(e.target.result);
+    if (!headers.length) return;
+    state.csvData = { headers, rows };
+
+    const opts = headers.map((h, i) => `<option value="${i}">${h || 'Column '+(i+1)}</option>`).join('');
+    [colSingle, colR, colG, colB].forEach(s => s.innerHTML = opts);
+
+    // Auto-guess best column
+    const guesses = guessColorColumns(headers, rows);
+    if (guesses.length) colSingle.value = guesses[0].index;
+
+    // Try to auto-match R/G/B columns by header name
+    const hi = n => headers.findIndex(h => new RegExp(`^${n}(ed|reen|lue)?$`, 'i').test(h));
+    const ri = hi('r'), gi = hi('g'), bi = hi('b');
+    if (ri >= 0) colR.value = ri;
+    if (gi >= 0) colG.value = gi;
+    if (bi >= 0) colB.value = bi;
+
+    uploadArea.innerHTML = `<div class="icon">✅</div><div>${file.name} — ${rows.length.toLocaleString()} rows</div>`;
+    csvPicker.classList.remove('hidden');
+  };
+  reader.readAsText(file);
+}
+
+// Column mode toggle
+document.querySelectorAll('[data-colmode]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-colmode]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.colMode = btn.dataset.colmode;
+    $('singleColPicker').classList.toggle('hidden', state.colMode !== 'single');
+    $('rgbColPicker').classList.toggle('hidden', state.colMode !== 'rgb');
+  });
+});
+
+$('btnLoadCsv').addEventListener('click', () => {
+  if (!state.csvData) return;
+  const colors = state.colMode === 'single'
+    ? colorsFromCsvSingle(state.csvData.rows, +colSingle.value)
+    : colorsFromCsvRgb(state.csvData.rows, +colR.value, +colG.value, +colB.value);
+  if (!colors.length) { setCount('No valid colors in selected column(s)'); return; }
+  state.rawColors = colors;
+  state.labels = new Array(colors.length).fill(0);
+  setCount(colors.length, 0);
+  btnVisualize.disabled = false;
+});
+
+function setCount(n, failed) {
+  if (typeof n === 'string') { colorCount.innerHTML = n; return; }
+  colorCount.innerHTML = `<strong>${n.toLocaleString()}</strong> colors loaded`
+    + (failed ? ` <span style="color:#e87c3e">(${failed} skipped)</span>` : '');
+}
+
+// ─── Viz type tabs ───
+document.querySelectorAll('.viz-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.viz-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.vizType = btn.dataset.viz;
+    scatterSubTabs.classList.toggle('visible', state.vizType === 'scatter');
+    if (state.sorted.length) renderCurrentViz();
+  });
+});
+
+// ─── Scatter sub-tabs ───
+document.querySelectorAll('.sub-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.sub-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.scatterMode = btn.dataset.mode;
+    if (state.sorted.length) renderCurrentViz();
+  });
+});
+
+// ─── Visualize ───
+btnVisualize.addEventListener('click', () => {
+  if (!state.rawColors.length) return;
+  btnVisualize.disabled = true;
+  btnVisualize.textContent = 'Processing…';
+
+  // Defer to allow UI repaint
+  setTimeout(() => {
+    try {
+      let labels = new Array(state.rawColors.length).fill(0);
+      if (enableClustering.checked) {
+        const k = parseInt(numClusters.value);
+        labels = kmeans(state.rawColors, k, clusterSpace.value);
+      }
+      state.labels = labels;
+      state.sorted = sortColors(state.rawColors, labels, sortBy.value);
+      renderCurrentViz();
+      exportSection.classList.remove('hidden');
+    } finally {
+      btnVisualize.disabled = false;
+      btnVisualize.textContent = 'Visualize';
+    }
+  }, 20);
+});
+
+function getContainerWidth() {
+  return Math.max(300, vizContainer.clientWidth - 32);
+}
+
+function renderCurrentViz() {
+  emptyState.classList.add('hidden');
+  tooltip.style.display = 'none';
+
+  const isCanvas = ['strip', 'grid', 'wheel'].includes(state.vizType);
+  vizCanvas.classList.toggle('hidden', !isCanvas);
+  plotlyDiv.classList.toggle('hidden', isCanvas);
+
+  const W = getContainerWidth();
+  const k = enableClustering.checked ? parseInt(numClusters.value) : 1;
+  const { sorted } = state;
+
+  // Remove old hover listeners by cloning canvas
+  const fresh = vizCanvas.cloneNode(false);
+  vizCanvas.parentNode.replaceChild(fresh, vizCanvas);
+  const canvas = $('vizCanvas');
+
+  if (state.vizType === 'strip') {
+    canvas.width  = W;
+    canvas.height = Math.max(80, Math.min(180, Math.round(W * 0.09)));
+    renderStrip(canvas, sorted, k);
+    attachStripHover(canvas, sorted);
+
+  } else if (state.vizType === 'grid') {
+    canvas.width  = W;
+    canvas.height = 400; // recalculated inside renderGrid
+    renderGrid(canvas, sorted);
+    attachGridHover(canvas, sorted);
+
+  } else if (state.vizType === 'wheel') {
+    canvas.width  = W;
+    canvas.height = Math.min(W, 680);
+    renderWheel(canvas, sorted);
+
+  } else if (state.vizType === 'scatter') {
+    renderScatter($('plotlyDiv'), sorted, state.scatterMode, k);
+  }
+}
+
+// ─── Export ───
+btnExportPNG.addEventListener('click', () => {
+  if (state.vizType === 'scatter') {
+    Plotly.downloadImage($('plotlyDiv'), { format: 'png', filename: 'colour-scatter', width: 1200, height: 700 });
+    return;
+  }
+  const link = document.createElement('a');
+  link.download = `colour-${state.vizType}.png`;
+  link.href = $('vizCanvas').toDataURL('image/png');
+  link.click();
+});
+
+btnExportCSV.addEventListener('click', () => {
+  const headers = ['hex','r','g','b','hue','saturation','lightness','L_lab','a_lab','b_lab','luminance','cluster'];
+  const rows = state.sorted.map(({ c, label }) =>
+    [c.hex, c.r, c.g, c.b,
+     c.h.toFixed(2), c.s.toFixed(4), c.l.toFixed(4),
+     c.L.toFixed(2), c.a.toFixed(2), c.bv.toFixed(2),
+     c.lum.toFixed(4), label
+    ].join(',')
+  );
+  const csv = [headers.join(','), ...rows].join('\n');
+  const link = document.createElement('a');
+  link.download = 'colours.csv';
+  link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  link.click();
+});
+
+// ─── Responsive resize ───
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (state.sorted.length) renderCurrentViz();
+  }, 200);
+});
+</script>
 </body>
 </html>
