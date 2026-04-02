@@ -504,6 +504,8 @@
       <select id="sortBy" class="full">
         <option value="cluster">Cluster, then hue</option>
         <option value="cluster-lum">Cluster, then luminance</option>
+        <option value="cluster-sat">Cluster, then saturation</option>
+        <option value="cluster-lit">Cluster, then lightness</option>
         <option value="hue">Hue</option>
         <option value="saturation">Saturation</option>
         <option value="lightness">Lightness</option>
@@ -571,6 +573,13 @@
             <button class="wc-btn" data-radius="value">Val</button>
             <button class="wc-btn" data-radius="luminance">Lum</button>
           </div>
+        </div>
+        <div class="wc-sep"></div>
+        <div class="wc-group" style="gap:0.5rem">
+          <span class="wc-label">Dot size</span>
+          <input type="range" id="wheelDotSize" min="1" max="12" value="0" step="0.5"
+            style="width:70px;accent-color:var(--accent);cursor:pointer">
+          <span class="wc-label" id="wheelDotSizeLabel">Auto</span>
         </div>
       </div>
     </div>
@@ -940,6 +949,8 @@ function sortColors(colors, labels, prop) {
   const keys = {
     cluster:        p => [p.label,  p.c.h, p.c.s, p.c.l],
     'cluster-lum':  p => [p.label,  p.c.lum, p.c.h],
+    'cluster-sat':  p => [p.label,  p.c.s, p.c.h],
+    'cluster-lit':  p => [p.label,  p.c.l, p.c.h],
     hue:            p => [p.c.h,    p.c.s, p.c.l],
     saturation:     p => [p.c.s,    p.c.h, p.c.l],
     lightness:      p => [p.c.l,    p.c.h],
@@ -974,8 +985,9 @@ function renderStrip(canvas, sorted, numClusters, showBorders) {
 
     // Cluster divider (only when bars are wide enough to be visible)
     if (showBorders && prevLabel !== null && label !== prevLabel && (W / n) > 1) {
-      ctx.fillStyle = 'rgba(0,0,0,0.75)';
-      ctx.fillRect(Math.round(x0) - 1, 0, 3, H);
+      const avgLum = (sorted[i - 1].c.lum + c.lum) / 2;
+      ctx.fillStyle = avgLum > 0.25 ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)';
+      ctx.fillRect(Math.round(x0) - 1, 0, 2, H);
     }
     prevLabel = label;
   }
@@ -1002,33 +1014,41 @@ function renderGrid(canvas, sorted, showBorders) {
     ctx.fillRect(col * tile, row * tile, tile, tile);
   }
 
-  // Second pass: draw per-edge polygon outlines around each cluster
+  // Second pass: draw per-edge polygon outlines around each cluster (adaptive contrast)
   if (showBorders && new Set(sorted.map(p => p.label)).size > 1) {
-    const bw = 3;
-    ctx.fillStyle = 'rgba(0,0,0,0.82)';
+    const bw = 2;
+    const edgeColor = (lumA, lumB) =>
+      (lumA + lumB) / 2 > 0.25 ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)';
+
     for (let i = 0; i < n; i++) {
       const col = i % cols, row = Math.floor(i / cols);
       const label = sorted[i].label;
+      const lum  = sorted[i].c.lum;
       const x = col * tile, y = row * tile;
 
       // Top edge: canvas edge OR different cluster above
       const topI = (row - 1) * cols + col;
       if (row === 0 || sorted[topI].label !== label) {
+        ctx.fillStyle = edgeColor(lum, row === 0 ? lum : sorted[topI].c.lum);
         ctx.fillRect(x, y, tile, bw);
       }
       // Bottom edge: canvas edge OR different cluster below
       const botI = (row + 1) * cols + col;
       if (botI >= n || sorted[botI].label !== label) {
+        ctx.fillStyle = edgeColor(lum, botI >= n ? lum : sorted[botI].c.lum);
         ctx.fillRect(x, y + tile - bw, tile, bw);
       }
       // Left edge: canvas edge OR different cluster to the left
       const leftI = row * cols + (col - 1);
       if (col === 0 || sorted[leftI].label !== label) {
+        ctx.fillStyle = edgeColor(lum, col === 0 ? lum : sorted[leftI].c.lum);
         ctx.fillRect(x, y, bw, tile);
       }
       // Right edge: canvas edge OR different cluster to the right
       const rightI = row * cols + (col + 1);
       if (col + 1 >= cols || rightI >= n || sorted[rightI].label !== label) {
+        const rLum = (col + 1 >= cols || rightI >= n) ? lum : sorted[rightI].c.lum;
+        ctx.fillStyle = edgeColor(lum, rLum);
         ctx.fillRect(x + tile - bw, y, bw, tile);
       }
     }
@@ -1036,11 +1056,12 @@ function renderGrid(canvas, sorted, showBorders) {
 }
 
 // ── WHEEL ──
-// opts: { bg, textColor, radiusMode: 'saturation'|'value'|'luminance' }
+// opts: { bg, textColor, radiusMode: 'saturation'|'value'|'luminance', dotSize }
 function renderWheel(canvas, sorted, opts) {
   const bg          = (opts && opts.bg)          || '#111827';
   const textColor   = (opts && opts.textColor)   || '#c0c0c0';
   const radiusMode  = (opts && opts.radiusMode)  || 'saturation';
+  const dotSizeOpt  = (opts && opts.dotSize)     || 0;
 
   const W = canvas.width;
   const H = Math.min(W, 680);
@@ -1054,13 +1075,13 @@ function renderWheel(canvas, sorted, opts) {
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
-  // Hue ring guide (subtle dots at perimeter)
-  for (let deg = 0; deg < 360; deg += 5) {
+  // Hue ring guide dots at perimeter — every 10°, larger and opaque for legibility
+  for (let deg = 0; deg < 360; deg += 10) {
     const ang = (deg - 90) * Math.PI / 180;
     const rgb = hslToRgb(deg, 1, 0.5);
     ctx.beginPath();
-    ctx.arc(cx + maxR * Math.cos(ang), cy + maxR * Math.sin(ang), 2, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.25)`;
+    ctx.arc(cx + maxR * Math.cos(ang), cy + maxR * Math.sin(ang), 6, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.88)`;
     ctx.fill();
   }
 
@@ -1078,7 +1099,8 @@ function renderWheel(canvas, sorted, opts) {
   ctx.restore();
 
   // Plot each colour: angle = hue, radius = selected mode
-  const dotR = sorted.length > 3000 ? 2.5 : sorted.length > 800 ? 3.5 : 5;
+  const autoR = sorted.length > 3000 ? 2.5 : sorted.length > 800 ? 3.5 : 5;
+  const dotR  = dotSizeOpt > 0 ? dotSizeOpt : autoR;
   for (const { c } of sorted) {
     const ang = (c.h - 90) * Math.PI / 180;
     let radVal;
@@ -1143,14 +1165,16 @@ function renderScatter(container, sorted, mode, numClusters) {
         line: { color: outlineColors, width: 0.5 }
       }
     }];
+    const scene = {
+      xaxis: { title: 'Hue (°)', range: [0, 360] },
+      yaxis: { title: 'Saturation', range: [0, 1] },
+      zaxis: { title: 'Lightness', range: [0, 1] },
+      bgcolor: '#f8fafc',
+      aspectratio: { x: 1.8, y: 1, z: 1 }
+    };
+    if (state.scatter3dCamera) scene.camera = state.scatter3dCamera;
     layout = {
-      scene: {
-        xaxis: { title: 'Hue (°)', range: [0, 360] },
-        yaxis: { title: 'Saturation', range: [0, 1] },
-        zaxis: { title: 'Lightness', range: [0, 1] },
-        bgcolor: '#f8fafc',
-        aspectratio: { x: 1.8, y: 1, z: 1 }
-      },
+      scene,
       margin: { l: 0, r: 0, b: 0, t: 0 },
       paper_bgcolor: 'transparent'
     };
@@ -1182,6 +1206,14 @@ function renderScatter(container, sorted, mode, numClusters) {
     displayModeBar: false,
     scrollZoom: true
   });
+
+  // Capture 3D camera position so it survives re-renders
+  if (mode === '3d' && !container._scatter3dListenerAdded) {
+    container.on('plotly_relayout', data => {
+      if (data['scene.camera']) state.scatter3dCamera = data['scene.camera'];
+    });
+    container._scatter3dListenerAdded = true;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1315,10 +1347,12 @@ const state = {
   csvData:     null,
   colMode:     'single',
   showBorders: true,
+  scatter3dCamera: null,
   wheel: {
     bg:          '#111827',
     textColor:   '#c0c0c0',
     radiusMode:  'saturation',
+    dotSize:     0,   // 0 = auto-scale by dataset size
   },
 };
 
@@ -1568,8 +1602,12 @@ clusterSpace.addEventListener('change', () => {
 enableClustering.addEventListener('change', () => {
   clusterControls.style.opacity = enableClustering.checked ? '1' : '0.4';
   clusterControls.style.pointerEvents = enableClustering.checked ? '' : 'none';
+  updateSortOptions();
   if (state.rawColors.length) triggerVisualize();
 });
+
+// Initialise sort option greying on page load
+updateSortOptions();
 
 function getContainerWidth() {
   return Math.max(300, vizContainer.clientWidth - 32);
@@ -1697,6 +1735,31 @@ document.querySelectorAll('.wc-btn').forEach(btn => {
     if (state.sorted.length) renderCurrentViz();
   });
 });
+
+$('wheelDotSize').addEventListener('input', e => {
+  const v = parseFloat(e.target.value);
+  state.wheel.dotSize = v <= 1 ? 0 : v;   // slider min = 1 but treat as "Auto"
+  $('wheelDotSizeLabel').textContent = v <= 1 ? 'Auto' : v.toFixed(1) + 'px';
+  if (state.vizType === 'wheel' && state.sorted.length) renderCurrentViz();
+});
+
+// ─── Sort option greying based on clustering ───
+const CLUSTER_SORTS    = new Set(['cluster', 'cluster-lum', 'cluster-sat', 'cluster-lit']);
+const NON_CLUSTER_SORTS = new Set(['hue', 'saturation', 'lightness', 'luminance', 'none']);
+
+function updateSortOptions() {
+  const clusteringOn = enableClustering.checked;
+  Array.from(sortBy.options).forEach(opt => {
+    const isClusterSort = CLUSTER_SORTS.has(opt.value);
+    opt.disabled = clusteringOn ? !isClusterSort : isClusterSort;
+    opt.style.color = opt.disabled ? 'var(--text-muted)' : '';
+  });
+  // If current selection is now disabled, switch to first enabled option
+  if (sortBy.selectedOptions[0]?.disabled) {
+    const first = Array.from(sortBy.options).find(o => !o.disabled);
+    if (first) sortBy.value = first.value;
+  }
+}
 
 // ─── Show borders toggle ───
 $('showBorders').addEventListener('change', () => {
