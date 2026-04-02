@@ -485,6 +485,13 @@
             </div>
             <input type="range" id="numClusters" min="2" max="30" value="8">
           </div>
+          <div class="toggle-row" style="margin-top:0.2rem">
+            <label class="switch">
+              <input type="checkbox" id="showBorders" checked>
+              <span class="slider-track"></span>
+            </label>
+            <span class="toggle-label">Show borders</span>
+          </div>
         </div>
       </div>
     </div>
@@ -951,7 +958,7 @@ function sortColors(colors, labels, prop) {
 // ═══════════════════════════════════════════════════════════
 
 // ── STRIP ──
-function renderStrip(canvas, sorted, numClusters) {
+function renderStrip(canvas, sorted, numClusters, showBorders) {
   const n = sorted.length;
   const W = canvas.width, H = canvas.height;
   const ctx = canvas.getContext('2d');
@@ -966,16 +973,16 @@ function renderStrip(canvas, sorted, numClusters) {
     ctx.fillRect(x0, 0, x1 - x0 + 0.5, H);
 
     // Cluster divider (only when bars are wide enough to be visible)
-    if (prevLabel !== null && label !== prevLabel && (W / n) > 1) {
-      ctx.fillStyle = 'rgba(255,255,255,0.75)';
-      ctx.fillRect(Math.round(x0) - 1, 0, 2, H);
+    if (showBorders && prevLabel !== null && label !== prevLabel && (W / n) > 1) {
+      ctx.fillStyle = 'rgba(0,0,0,0.75)';
+      ctx.fillRect(Math.round(x0) - 1, 0, 3, H);
     }
     prevLabel = label;
   }
 }
 
 // ── GRID ──
-function renderGrid(canvas, sorted) {
+function renderGrid(canvas, sorted, showBorders) {
   const n = sorted.length;
   const W = canvas.width;
   const ctx = canvas.getContext('2d');
@@ -995,18 +1002,35 @@ function renderGrid(canvas, sorted) {
     ctx.fillRect(col * tile, row * tile, tile, tile);
   }
 
-  // Second pass: draw cluster boundary lines (white, 2px)
-  ctx.fillStyle = 'rgba(255,255,255,0.82)';
-  for (let i = 1; i < n; i++) {
-    if (sorted[i].label === sorted[i - 1].label) continue;
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    if (col === 0) {
-      // Boundary at row start → horizontal line above this row
-      ctx.fillRect(0, row * tile - 1, W, 2);
-    } else {
-      // Boundary mid-row → vertical line between tiles
-      ctx.fillRect(col * tile - 1, row * tile, 2, tile);
+  // Second pass: draw per-edge polygon outlines around each cluster
+  if (showBorders && new Set(sorted.map(p => p.label)).size > 1) {
+    const bw = 3;
+    ctx.fillStyle = 'rgba(0,0,0,0.82)';
+    for (let i = 0; i < n; i++) {
+      const col = i % cols, row = Math.floor(i / cols);
+      const label = sorted[i].label;
+      const x = col * tile, y = row * tile;
+
+      // Top edge: canvas edge OR different cluster above
+      const topI = (row - 1) * cols + col;
+      if (row === 0 || sorted[topI].label !== label) {
+        ctx.fillRect(x, y, tile, bw);
+      }
+      // Bottom edge: canvas edge OR different cluster below
+      const botI = (row + 1) * cols + col;
+      if (botI >= n || sorted[botI].label !== label) {
+        ctx.fillRect(x, y + tile - bw, tile, bw);
+      }
+      // Left edge: canvas edge OR different cluster to the left
+      const leftI = row * cols + (col - 1);
+      if (col === 0 || sorted[leftI].label !== label) {
+        ctx.fillRect(x, y, bw, tile);
+      }
+      // Right edge: canvas edge OR different cluster to the right
+      const rightI = row * cols + (col + 1);
+      if (col + 1 >= cols || rightI >= n || sorted[rightI].label !== label) {
+        ctx.fillRect(x + tile - bw, y, bw, tile);
+      }
     }
   }
 }
@@ -1091,9 +1115,13 @@ function renderWheel(canvas, sorted, opts) {
 // ── SCATTER ──
 function renderScatter(container, sorted, mode, numClusters) {
   const markerColors  = sorted.map(p => p.c.hex);
-  // Cluster outline color (distinct hue per cluster)
+  // Cluster outline: use each cluster's average (centroid) colour
   const outlineColors = numClusters > 1
-    ? sorted.map(p => `hsl(${(p.label / numClusters) * 360}, 65%, 45%)`)
+    ? (() => {
+        const stats = computeClusterStats(sorted);
+        const centroid = Object.fromEntries(stats.map(s => [s.label, s.avgHex]));
+        return sorted.map(p => centroid[p.label]);
+      })()
     : markerColors;
 
   const hoverText = sorted.map(p =>
@@ -1286,6 +1314,7 @@ const state = {
   scatterMode: 'hl',
   csvData:     null,
   colMode:     'single',
+  showBorders: true,
   wheel: {
     bg:          '#111827',
     textColor:   '#c0c0c0',
@@ -1575,13 +1604,13 @@ function renderCurrentViz() {
   if (state.vizType === 'strip') {
     canvas.width  = W;
     canvas.height = Math.max(160, Math.min(360, Math.round(W * 0.18)));
-    renderStrip(canvas, sorted, k);
+    renderStrip(canvas, sorted, k, state.showBorders);
     attachStripHover(canvas, sorted);
 
   } else if (state.vizType === 'grid') {
     canvas.width  = W;
     canvas.height = 400; // recalculated inside renderGrid
-    renderGrid(canvas, sorted);
+    renderGrid(canvas, sorted, state.showBorders);
     attachGridHover(canvas, sorted);
 
   } else if (state.vizType === 'wheel') {
@@ -1636,12 +1665,13 @@ btnExportCSV.addEventListener('click', () => {
   );
 
   const csv = [
-    headers.join(','),
-    ...rows,
-    '',
     '# Cluster Summary',
     summaryHeaders.join(','),
     ...summaryRows,
+    '',
+    '# Colour Data',
+    headers.join(','),
+    ...rows,
   ].join('\n');
 
   const link = document.createElement('a');
@@ -1666,6 +1696,12 @@ document.querySelectorAll('.wc-btn').forEach(btn => {
     state.wheel.radiusMode = btn.dataset.radius;
     if (state.sorted.length) renderCurrentViz();
   });
+});
+
+// ─── Show borders toggle ───
+$('showBorders').addEventListener('change', () => {
+  state.showBorders = $('showBorders').checked;
+  if (state.sorted.length && ['strip', 'grid'].includes(state.vizType)) renderCurrentViz();
 });
 
 // ─── Stats drawer toggle ───
