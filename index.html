@@ -258,6 +258,132 @@
     footer a { color: rgba(255,255,255,0.75); text-decoration: none; }
     footer a:hover { color: #fff; }
 
+    /* ── WHEEL OVERLAY CONTROLS ── */
+    #wheelControls {
+      position: absolute;
+      bottom: 1.25rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(10, 20, 36, 0.82);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      padding: 0.45rem 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      z-index: 10;
+      white-space: nowrap;
+    }
+    .wc-group { display: flex; align-items: center; gap: 0.4rem; }
+    .wc-label {
+      font-size: 0.68rem;
+      color: rgba(255,255,255,0.5);
+      font-weight: 500;
+    }
+    .wc-color {
+      width: 26px; height: 22px;
+      padding: 1px 2px;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 4px;
+      background: none;
+      cursor: pointer;
+    }
+    .wc-btns { display: flex; gap: 2px; }
+    .wc-btn {
+      padding: 0.18rem 0.42rem;
+      font-size: 0.68rem; font-weight: 500;
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 4px;
+      background: none;
+      color: rgba(255,255,255,0.5);
+      cursor: pointer;
+      transition: all 0.12s;
+      font-family: inherit;
+    }
+    .wc-btn:hover { color: white; border-color: rgba(255,255,255,0.4); }
+    .wc-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+    .wc-sep { width: 1px; height: 18px; background: rgba(255,255,255,0.12); }
+
+    /* ── STATS DRAWER ── */
+    .viz-area { position: relative; }  /* ensure drawer is scoped to viz area */
+
+    #statsDrawer {
+      position: absolute;
+      top: 0; right: 0;
+      width: 290px; height: 100%;
+      background: var(--white);
+      border-left: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      z-index: 20;
+      transform: translateX(100%);
+      transition: transform 0.22s ease;
+      box-shadow: -4px 0 18px rgba(0,0,0,0.07);
+    }
+    #statsDrawer.open { transform: translateX(0); }
+    .stats-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.6rem 0.85rem;
+      background: var(--bg-alt);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.78rem; font-weight: 600; color: var(--primary);
+      flex-shrink: 0;
+    }
+    .stats-close {
+      background: none; border: none; cursor: pointer;
+      color: var(--text-muted); font-size: 0.9rem; line-height: 1;
+      padding: 2px 4px; border-radius: 3px;
+    }
+    .stats-close:hover { background: var(--border); }
+    .stats-content { flex: 1; overflow-y: auto; padding: 0.75rem; }
+    .stats-cluster {
+      margin-bottom: 0.85rem;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      overflow: hidden;
+    }
+    .stats-cluster-head {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.45rem 0.65rem;
+      background: var(--bg-alt);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.76rem; font-weight: 600;
+    }
+    .stats-swatch {
+      width: 18px; height: 18px;
+      border-radius: 3px;
+      border: 1px solid rgba(0,0,0,0.1);
+      flex-shrink: 0;
+    }
+    .stats-table {
+      width: 100%; border-collapse: collapse;
+      font-size: 0.73rem;
+    }
+    .stats-table td {
+      padding: 0.28rem 0.65rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+    .stats-table td:first-child { color: var(--text-muted); width: 55%; }
+    .stats-table tr:last-child td { border-bottom: none; }
+
+    /* Stats toggle button in viz-tabs */
+    .viz-tab-spacer { flex: 1; }
+    #btnStats {
+      padding: 0.35rem 0.75rem;
+      font-size: 0.78rem; font-weight: 500;
+      color: var(--text-muted);
+      background: none; border: none;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s;
+      white-space: nowrap;
+      font-family: inherit;
+    }
+    #btnStats:hover { color: var(--accent); }
+    #btnStats.active { color: var(--accent); border-bottom-color: var(--accent); }
+
     @media (max-width: 640px) {
       .sidebar { width: 220px; }
       :root { --sidebar-w: 220px; }
@@ -370,6 +496,7 @@
       <span class="section-label">Sort by</span>
       <select id="sortBy" class="full">
         <option value="cluster">Cluster, then hue</option>
+        <option value="cluster-lum">Cluster, then luminance</option>
         <option value="hue">Hue</option>
         <option value="saturation">Saturation</option>
         <option value="lightness">Lightness</option>
@@ -400,6 +527,8 @@
       <button class="viz-tab" data-viz="grid">Grid</button>
       <button class="viz-tab" data-viz="scatter">Scatter</button>
       <button class="viz-tab" data-viz="wheel">Wheel</button>
+      <span class="viz-tab-spacer"></span>
+      <button id="btnStats" class="hidden" onclick="toggleStatsDrawer()">≡ Stats</button>
     </div>
 
     <div class="sub-tabs-row" id="scatterSubTabs">
@@ -415,6 +544,39 @@
       </div>
       <canvas id="vizCanvas" class="hidden"></canvas>
       <div id="plotlyDiv" class="hidden"></div>
+
+      <!-- Wheel interactive overlay -->
+      <div id="wheelControls" class="hidden">
+        <div class="wc-group">
+          <span class="wc-label">BG</span>
+          <input type="color" id="wheelBg" class="wc-color" value="#111827">
+        </div>
+        <div class="wc-sep"></div>
+        <div class="wc-group">
+          <span class="wc-label">Labels</span>
+          <input type="color" id="wheelText" class="wc-color" value="#c0c0c0">
+        </div>
+        <div class="wc-sep"></div>
+        <div class="wc-group">
+          <span class="wc-label">Radius</span>
+          <div class="wc-btns">
+            <button class="wc-btn active" data-radius="saturation">Sat</button>
+            <button class="wc-btn" data-radius="value">Val</button>
+            <button class="wc-btn" data-radius="luminance">Lum</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats slide-in drawer -->
+    <div id="statsDrawer">
+      <div class="stats-header">
+        <span>Cluster Statistics</span>
+        <button class="stats-close" onclick="toggleStatsDrawer()">✕</button>
+      </div>
+      <div id="statsContent" class="stats-content">
+        <p style="font-size:0.78rem;color:var(--text-muted)">Run a visualization to see cluster stats.</p>
+      </div>
     </div>
   </main>
 
@@ -517,6 +679,7 @@ function makeColor(r, g, b) {
     r, g, b,
     hex: rgbToHex(r, g, b),
     h: hsl.h, s: hsl.s, l: hsl.l,
+    v: Math.max(r, g, b) / 255,   // HSV value (for wheel radius mode)
     L: lab.L, a: lab.a, bv: lab.bv,
     lum: perceptualLum(r, g, b)
   };
@@ -768,11 +931,12 @@ function sortColors(colors, labels, prop) {
   const pairs = colors.map((c, i) => ({ c, label: labels[i] }));
   if (prop === 'none') return pairs;
   const keys = {
-    cluster:    p => [p.label,  p.c.h, p.c.s, p.c.l],
-    hue:        p => [p.c.h,    p.c.s, p.c.l],
-    saturation: p => [p.c.s,    p.c.h, p.c.l],
-    lightness:  p => [p.c.l,    p.c.h],
-    luminance:  p => [p.c.lum,  p.c.h],
+    cluster:        p => [p.label,  p.c.h, p.c.s, p.c.l],
+    'cluster-lum':  p => [p.label,  p.c.lum, p.c.h],
+    hue:            p => [p.c.h,    p.c.s, p.c.l],
+    saturation:     p => [p.c.s,    p.c.h, p.c.l],
+    lightness:      p => [p.c.l,    p.c.h],
+    luminance:      p => [p.c.lum,  p.c.h],
   };
   const key = keys[prop] || keys.cluster;
   return [...pairs].sort((a, b) => {
@@ -824,27 +988,49 @@ function renderGrid(canvas, sorted) {
   canvas.height = rows * tile;
   ctx.clearRect(0, 0, W, canvas.height);
 
+  // First pass: fill colour tiles
   for (let i = 0; i < n; i++) {
     const col = i % cols, row = Math.floor(i / cols);
     ctx.fillStyle = sorted[i].c.hex;
     ctx.fillRect(col * tile, row * tile, tile, tile);
   }
+
+  // Second pass: draw cluster boundary lines (white, 2px)
+  ctx.fillStyle = 'rgba(255,255,255,0.82)';
+  for (let i = 1; i < n; i++) {
+    if (sorted[i].label === sorted[i - 1].label) continue;
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    if (col === 0) {
+      // Boundary at row start → horizontal line above this row
+      ctx.fillRect(0, row * tile - 1, W, 2);
+    } else {
+      // Boundary mid-row → vertical line between tiles
+      ctx.fillRect(col * tile - 1, row * tile, 2, tile);
+    }
+  }
 }
 
 // ── WHEEL ──
-function renderWheel(canvas, sorted) {
+// opts: { bg, textColor, radiusMode: 'saturation'|'value'|'luminance' }
+function renderWheel(canvas, sorted, opts) {
+  const bg          = (opts && opts.bg)          || '#111827';
+  const textColor   = (opts && opts.textColor)   || '#c0c0c0';
+  const radiusMode  = (opts && opts.radiusMode)  || 'saturation';
+
   const W = canvas.width;
   const H = Math.min(W, 680);
   canvas.height = H;
   const ctx = canvas.getContext('2d');
   const cx = W / 2, cy = H / 2;
-  const maxR = Math.min(cx, cy) - 20;
+  // Reduce maxR enough to keep labels (≈16px wide + 14px offset) fully inside canvas
+  const maxR = Math.min(cx, cy) - 46;
 
-  // Dark background
-  ctx.fillStyle = '#111827';
+  // Background
+  ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
-  // Hue ring guide (subtle)
+  // Hue ring guide (subtle dots at perimeter)
   for (let deg = 0; deg < 360; deg += 5) {
     const ang = (deg - 90) * Math.PI / 180;
     const rgb = hslToRgb(deg, 1, 0.5);
@@ -854,11 +1040,12 @@ function renderWheel(canvas, sorted) {
     ctx.fill();
   }
 
-  // Hue degree labels
+  // Hue degree labels — placed just outside the ring, fully within canvas bounds
   ctx.save();
-  ctx.font = 'bold 12px Inter, sans-serif';
-  ctx.fillStyle = 'rgba(255,255,255,0.75)';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = '11px Inter, sans-serif';
+  ctx.fillStyle = textColor;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
   for (let deg = 0; deg < 360; deg += 30) {
     const ang = (deg - 90) * Math.PI / 180;
     const r = maxR + 18;
@@ -866,11 +1053,15 @@ function renderWheel(canvas, sorted) {
   }
   ctx.restore();
 
-  // Plot each color: angle = hue, radius = saturation (min 5% to keep unsaturated visible near center)
+  // Plot each colour: angle = hue, radius = selected mode
   const dotR = sorted.length > 3000 ? 2.5 : sorted.length > 800 ? 3.5 : 5;
   for (const { c } of sorted) {
     const ang = (c.h - 90) * Math.PI / 180;
-    const r = (c.s * 0.9 + 0.07) * maxR;
+    let radVal;
+    if      (radiusMode === 'value')     radVal = c.v;
+    else if (radiusMode === 'luminance') radVal = c.lum;
+    else                                 radVal = c.s;   // saturation (default)
+    const r = (radVal * 0.9 + 0.07) * maxR;
     ctx.beginPath();
     ctx.arc(cx + r * Math.cos(ang), cy + r * Math.sin(ang), dotR, 0, Math.PI * 2);
     ctx.fillStyle = c.hex;
@@ -886,14 +1077,14 @@ function renderWheel(canvas, sorted) {
   ctx.fillStyle = grad;
   ctx.fill();
 
-  // Legend
+  // Legend (bottom-left)
+  const modeLabels = { saturation: 'Saturation', value: 'Value (HSV)', luminance: 'Perceptual Luminance' };
   ctx.save();
-  ctx.font = '10px Inter, sans-serif';
-  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.font = '11px Inter, sans-serif';
+  ctx.fillStyle = textColor;
+  ctx.globalAlpha = 0.65;
   ctx.textAlign = 'left';
-  ctx.font = '12px Inter, sans-serif';
-  ctx.fillStyle = 'rgba(255,255,255,0.65)';
-  ctx.fillText('Angle = Hue · Radius = Saturation', 10, H - 12);
+  ctx.fillText('Angle = Hue  ·  Radius = ' + (modeLabels[radiusMode] || radiusMode), 10, H - 12);
   ctx.restore();
 }
 
@@ -1009,17 +1200,97 @@ function attachGridHover(canvas, sorted) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// CLUSTER STATISTICS
+// ═══════════════════════════════════════════════════════════
+
+function median(arr) {
+  const s = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+function computeClusterStats(sorted) {
+  const buckets = {};
+  for (const { c, label } of sorted) {
+    if (!buckets[label]) buckets[label] = [];
+    buckets[label].push(c);
+  }
+  const total = sorted.length;
+  return Object.entries(buckets).map(([label, colors]) => {
+    const n = colors.length;
+    const avgR = Math.round(colors.reduce((s, c) => s + c.r, 0) / n);
+    const avgG = Math.round(colors.reduce((s, c) => s + c.g, 0) / n);
+    const avgB = Math.round(colors.reduce((s, c) => s + c.b, 0) / n);
+    const lits = colors.map(c => c.l);
+    const sats = colors.map(c => c.s);
+    const lums = colors.map(c => c.lum);
+    const hues = colors.map(c => c.h);
+    return {
+      label:   +label,
+      n,
+      pct:     (n / total * 100),
+      avgHex:  rgbToHex(avgR, avgG, avgB),
+      medHue:  median(hues),
+      medSat:  median(sats),
+      medLit:  median(lits),
+      medLum:  median(lums),
+      minLit:  Math.min(...lits),
+      maxLit:  Math.max(...lits),
+      minSat:  Math.min(...sats),
+      maxSat:  Math.max(...sats),
+    };
+  }).sort((a, b) => a.label - b.label);
+}
+
+function renderClusterStats(sorted) {
+  const el = document.getElementById('statsContent');
+  if (!sorted || !sorted.length) {
+    el.innerHTML = '<p style="font-size:0.78rem;color:var(--text-muted)">No data loaded.</p>';
+    return;
+  }
+  const stats = computeClusterStats(sorted);
+  const numClusters = stats.length;
+
+  const pct  = v => v.toFixed(1) + '%';
+  const deg  = v => v.toFixed(0) + '°';
+  const p100 = v => (v * 100).toFixed(1) + '%';
+
+  el.innerHTML = stats.map(s => `
+    <div class="stats-cluster">
+      <div class="stats-cluster-head">
+        <div class="stats-swatch" style="background:${s.avgHex}"></div>
+        <span>Cluster ${s.label + 1}</span>
+        <span style="margin-left:auto;font-weight:400;color:var(--text-muted)">${s.n.toLocaleString()} colours (${pct(s.pct)})</span>
+      </div>
+      <table class="stats-table">
+        <tr><td>Median hue</td><td>${deg(s.medHue)}</td></tr>
+        <tr><td>Median saturation</td><td>${p100(s.medSat)}</td></tr>
+        <tr><td>Sat. range</td><td>${p100(s.minSat)} – ${p100(s.maxSat)}</td></tr>
+        <tr><td>Median lightness</td><td>${p100(s.medLit)}</td></tr>
+        <tr><td>Lightness range</td><td>${p100(s.minLit)} – ${p100(s.maxLit)}</td></tr>
+        <tr><td>Median luminance</td><td>${s.medLum.toFixed(3)}</td></tr>
+        <tr><td>Avg colour</td><td><code>${s.avgHex}</code></td></tr>
+      </table>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
 // APP STATE & UI
 // ═══════════════════════════════════════════════════════════
 
 const state = {
-  rawColors:  [],
-  sorted:     [],
-  labels:     [],
-  vizType:    'strip',
-  scatterMode:'hl',
-  csvData:    null,
-  colMode:    'single',
+  rawColors:   [],
+  sorted:      [],
+  labels:      [],
+  vizType:     'strip',
+  scatterMode: 'hl',
+  csvData:     null,
+  colMode:     'single',
+  wheel: {
+    bg:          '#111827',
+    textColor:   '#c0c0c0',
+    radiusMode:  'saturation',
+  },
 };
 
 // ─── Element refs ───
@@ -1203,6 +1474,9 @@ document.querySelectorAll('.viz-tab').forEach(btn => {
     btn.classList.add('active');
     state.vizType = btn.dataset.viz;
     scatterSubTabs.classList.toggle('visible', state.vizType === 'scatter');
+    // Stats button only relevant for strip/grid
+    const showStats = state.sorted.length && ['strip', 'grid'].includes(state.vizType);
+    $('btnStats').classList.toggle('hidden', !showStats);
     if (state.sorted.length) renderCurrentViz();
   });
 });
@@ -1235,6 +1509,9 @@ function triggerVisualize() {
       state.sorted = sortColors(state.rawColors, labels, sortBy.value);
       renderCurrentViz();
       exportSection.classList.remove('hidden');
+      // Show stats button for strip/grid views
+      const showStats = ['strip', 'grid'].includes(state.vizType);
+      $('btnStats').classList.toggle('hidden', !showStats);
     } finally {
       btnVisualize.disabled = false;
       btnVisualize.textContent = 'Visualize';
@@ -1273,6 +1550,12 @@ function renderCurrentViz() {
   emptyState.classList.add('hidden');
   tooltip.style.display = 'none';
 
+  // Show wheel overlay only on wheel tab
+  $('wheelControls').classList.toggle('hidden', state.vizType !== 'wheel');
+
+  // Update stats drawer content whenever viz updates
+  renderClusterStats(state.sorted);
+
   const isCanvas = ['strip', 'grid', 'wheel'].includes(state.vizType);
   // Always use a live DOM lookup — the canvas node is replaced on each render,
   // so the module-level vizCanvas ref becomes detached after the first call.
@@ -1304,7 +1587,7 @@ function renderCurrentViz() {
   } else if (state.vizType === 'wheel') {
     canvas.width  = W;
     canvas.height = Math.min(W, 680);
-    renderWheel(canvas, sorted);
+    renderWheel(canvas, sorted, state.wheel);
 
   } else if (state.vizType === 'scatter') {
     renderScatter($('plotlyDiv'), sorted, state.scatterMode, k);
@@ -1324,6 +1607,7 @@ btnExportPNG.addEventListener('click', () => {
 });
 
 btnExportCSV.addEventListener('click', () => {
+  // ── Colour rows ──
   const headers = ['hex','r','g','b','hue','saturation','lightness','L_lab','a_lab','b_lab','luminance','cluster'];
   const rows = state.sorted.map(({ c, label }) =>
     [c.hex, c.r, c.g, c.b,
@@ -1332,12 +1616,64 @@ btnExportCSV.addEventListener('click', () => {
      c.lum.toFixed(4), label
     ].join(',')
   );
-  const csv = [headers.join(','), ...rows].join('\n');
+
+  // ── Cluster summary block ──
+  const stats = computeClusterStats(state.sorted);
+  const summaryHeaders = [
+    'cluster','n','pct','avg_hex',
+    'median_hue','median_sat','sat_min','sat_max',
+    'median_lightness','lightness_min','lightness_max',
+    'median_luminance'
+  ];
+  const p4 = v => v.toFixed(4);
+  const p2 = v => v.toFixed(2);
+  const summaryRows = stats.map(s =>
+    [s.label, s.n, (s.pct / 100).toFixed(4), s.avgHex,
+     p2(s.medHue), p4(s.medSat), p4(s.minSat), p4(s.maxSat),
+     p4(s.medLit), p4(s.minLit), p4(s.maxLit),
+     p4(s.medLum)
+    ].join(',')
+  );
+
+  const csv = [
+    headers.join(','),
+    ...rows,
+    '',
+    '# Cluster Summary',
+    summaryHeaders.join(','),
+    ...summaryRows,
+  ].join('\n');
+
   const link = document.createElement('a');
   link.download = 'colours.csv';
   link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
   link.click();
 });
+
+// ─── Wheel overlay controls ───
+$('wheelBg').addEventListener('input', e => {
+  state.wheel.bg = e.target.value;
+  if (state.vizType === 'wheel' && state.sorted.length) renderCurrentViz();
+});
+$('wheelText').addEventListener('input', e => {
+  state.wheel.textColor = e.target.value;
+  if (state.vizType === 'wheel' && state.sorted.length) renderCurrentViz();
+});
+document.querySelectorAll('.wc-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.wc-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.wheel.radiusMode = btn.dataset.radius;
+    if (state.sorted.length) renderCurrentViz();
+  });
+});
+
+// ─── Stats drawer toggle ───
+function toggleStatsDrawer() {
+  const drawer = $('statsDrawer');
+  const open   = drawer.classList.toggle('open');
+  $('btnStats').classList.toggle('active', open);
+}
 
 // ─── Responsive resize ───
 let resizeTimer;
