@@ -975,21 +975,26 @@ function renderStrip(canvas, sorted, numClusters, showBorders) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, W, H);
 
-  let prevLabel = null;
+  // First pass: fill all colour bars
   for (let i = 0; i < n; i++) {
-    const { c, label } = sorted[i];
     const x0 = (i / n) * W;
     const x1 = ((i + 1) / n) * W;
-    ctx.fillStyle = c.hex;
+    ctx.fillStyle = sorted[i].c.hex;
     ctx.fillRect(x0, 0, x1 - x0 + 0.5, H);
+  }
 
-    // Cluster divider (only when bars are wide enough to be visible)
-    if (showBorders && prevLabel !== null && label !== prevLabel && (W / n) > 1) {
-      const avgLum = (sorted[i - 1].c.lum + c.lum) / 2;
-      ctx.fillStyle = avgLum > 0.25 ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)';
-      ctx.fillRect(Math.round(x0) - 1, 0, 2, H);
+  // Second pass: cluster dividers on top (bars wide enough to be visible)
+  if (showBorders && (W / n) > 1) {
+    for (let i = 1; i < n; i++) {
+      if (sorted[i].label === sorted[i - 1].label) continue;
+      const x = Math.round((i / n) * W);
+      const avgLum = (sorted[i - 1].c.lum + sorted[i].c.lum) / 2;
+      // Draw white then black 1px lines — visible on any background
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillRect(x - 1, 0, 1, H);
+      ctx.fillStyle = avgLum > 0.25 ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.7)';
+      ctx.fillRect(x, 0, 1, H);
     }
-    prevLabel = label;
   }
 }
 
@@ -1606,9 +1611,6 @@ enableClustering.addEventListener('change', () => {
   if (state.rawColors.length) triggerVisualize();
 });
 
-// Initialise sort option greying on page load
-updateSortOptions();
-
 function getContainerWidth() {
   return Math.max(300, vizContainer.clientWidth - 32);
 }
@@ -1760,6 +1762,9 @@ function updateSortOptions() {
     if (first) sortBy.value = first.value;
   }
 }
+
+// Initialise sort option greying now that constants are defined
+updateSortOptions();
 
 // ─── Show borders toggle ───
 $('showBorders').addEventListener('change', () => {
