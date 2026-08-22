@@ -570,7 +570,31 @@
   border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-white);color:var(--primary)}
 #vomProjBar button:hover{background:var(--bg-page)}
 #vomProjBar .pb-dest{color:var(--accent);font-size:.76rem}
+#vomProjBar button.pb-open{border-color:var(--accent);color:var(--accent)}
 @media(max-width:640px){#vomProjBar{padding-left:.9rem;padding-right:.9rem}}
+
+/* The picker. Its own tiny modal rather than each tool's, because the four
+   tools have four different dialog systems and none of them is shared. */
+#vomPick{position:fixed;inset:0;z-index:9600;display:none;align-items:center;justify-content:center;
+  background:rgba(15,28,36,.44);font-family:var(--vom-font)}
+#vomPick.on{display:flex}
+#vomPick .pk{background:var(--bg-white);border-radius:var(--radius);width:min(560px,92vw);
+  max-height:82vh;display:flex;flex-direction:column;box-shadow:0 18px 50px rgba(15,28,36,.3)}
+#vomPick .pk-head{padding:.85rem 1.1rem .6rem;border-bottom:1px solid var(--border)}
+#vomPick .pk-head h3{margin:0;font-family:var(--vom-display);font-weight:400;font-size:1.12rem;color:var(--text)}
+#vomPick .pk-head p{margin:.28rem 0 0;font-size:.78rem;color:var(--text-muted);line-height:1.45}
+#vomPick .pk-body{overflow:auto;padding:.5rem}
+#vomPick .pk-row{display:block;width:100%;text-align:left;padding:.55rem .7rem;border:1px solid transparent;
+  border-radius:var(--radius);background:none;cursor:pointer;font-size:.86rem;color:var(--text)}
+#vomPick .pk-row:hover{background:var(--bg-page);border-color:var(--border)}
+#vomPick .pk-row b{font-weight:600}
+#vomPick .pk-row span{display:block;font-size:.74rem;color:var(--text-muted);margin-top:.12rem}
+#vomPick .pk-empty{padding:1rem .8rem;font-size:.82rem;color:var(--text-muted);line-height:1.5}
+#vomPick .pk-foot{padding:.6rem 1.1rem .85rem;border-top:1px solid var(--border);display:flex;
+  align-items:center;gap:.7rem}
+#vomPick .pk-foot button{font-family:var(--vom-font);font-size:.8rem;padding:.32rem .8rem;cursor:pointer;
+  border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-white);color:var(--text)}
+#vomPick .pk-note{font-size:.74rem;color:var(--text-muted)}
 /*__VOM_PROJBAR_END__*/
 </style>
 </head>
@@ -3158,6 +3182,175 @@ async function vomOutputs(p,handle){
 /* Which project the tools should open. One key, shared by every page. */
 function vomCurrentId(){return _vomTx('suiteMeta','readonly',function(s){return s.get('currentProject');});}
 function vomSetCurrent(id){return _vomTx('suiteMeta','readwrite',function(s){return s.put(id,'currentProject');});}
+
+/* ── Reading a dataset back OUT of a project ──────────────────────────────
+   The half that closes the loop. Until now a tool could write into a project
+   but you still had to find the files again yourself, which is exactly the
+   step a project was supposed to remove.
+
+   A browser project's images live in the MANAGER's own database, not this one.
+   Same origin, so any page here can read it — but it must never CREATE it.
+   indexedDB.open with no version happily makes an EMPTY database at version 1;
+   the Manager would then open that same version, get no upgradeneeded event,
+   and find none of its stores. A tool that merely looked would have broken the
+   Manager's whole library. So: check whether it exists, and if an empty one got
+   made anyway, delete it again. */
+var VOM_MGR_DB='vom-viewer', _vomMgrDb=null;
+var VOM_IMG_RE=/\.(jpe?g|png|gif|bmp|webp|tiff?)$/i;
+
+function _vomNat(a,b){
+  return String(a==null?'':a).localeCompare(String(b==null?'':b),undefined,{numeric:true,sensitivity:'base'});
+}
+
+async function vomManagerDb(){
+  if(_vomMgrDb) return _vomMgrDb;
+  if(indexedDB.databases){
+    try{
+      var list=await indexedDB.databases();
+      /* An empty list means the API answered "none", which is a real answer.
+         A throw means it did not answer at all — fall through and let the
+         empty-store guard below do the work. */
+      if(list && !list.some(function(d){return d.name===VOM_MGR_DB;})) return null;
+    }catch(e){}
+  }
+  var db;
+  try{
+    db=await new Promise(function(res,rej){
+      var rq=indexedDB.open(VOM_MGR_DB);
+      rq.onsuccess=function(){res(rq.result);};
+      rq.onerror=function(){rej(rq.error);};
+      rq.onblocked=function(){rej(new Error('blocked'));};
+    });
+  }catch(e){ return null; }
+  if(!db.objectStoreNames.contains('datasets')||!db.objectStoreNames.contains('images')){
+    try{db.close();}catch(e){}
+    try{indexedDB.deleteDatabase(VOM_MGR_DB);}catch(e){}
+    return null;
+  }
+  /* The Manager may upgrade its schema while this tab holds the database open,
+     which would block that upgrade indefinitely — the Manager would appear to
+     hang on load with no explanation and the culprit in another tab. Let go. */
+  db.onversionchange=function(){ try{db.close();}catch(e){} _vomMgrDb=null; };
+  _vomMgrDb=db;
+  return db;
+}
+function _vomMgrReq(db,store,fn){
+  return new Promise(function(res,rej){
+    var tx=db.transaction(store,'readonly'),rq=fn(tx.objectStore(store));
+    rq.onsuccess=function(){res(rq.result);};
+    rq.onerror=function(){rej(rq.error);};
+  });
+}
+
+/* Every dataset in this project, whichever store it lives in. `count` is what
+   is actually there right now, not what a record last claimed. */
+async function vomDatasets(p,handle){
+  if(!p) return [];
+  if(p.store==='folder'){
+    if(!handle) return [];
+    var root;
+    try{ root=await handle.getDirectoryHandle('datasets',{create:false}); }catch(e){ return []; }
+    var out=[];
+    for await (var e of root.entries()){
+      if(e[1].kind!=='directory') continue;
+      var doc=null;
+      try{
+        var dh=await e[1].getFileHandle('dataset.json');
+        doc=JSON.parse(await (await dh.getFile()).text());
+      }catch(err){ continue; }        /* a bare folder of images is not a dataset */
+      if(!doc||doc.format!=='vom-dataset') continue;
+      var ex={}; (doc.excluded||[]).forEach(function(n){ex[n]=1;});
+      var count=0, edited=0;
+      for await (var f of e[1].entries())
+        if(f[1].kind==='file'&&VOM_IMG_RE.test(f[0])&&!ex[f[0]]) count++;
+      (doc.images||[]).forEach(function(i){ if(i.edits&&!ex[i.file]) edited++; });
+      out.push({id:doc.id,name:doc.name||e[0],slug:e[0],count:count,edited:edited,
+                note:doc.note||'',updated:doc.updated||doc.created||0,where:'folder'});
+    }
+    return out.sort(function(a,b){return _vomNat(a.name,b.name);});
+  }
+  var db=await vomManagerDb();
+  if(!db) return [];
+  var dss=await _vomMgrReq(db,'datasets',function(s){return s.getAll();});
+  var mine=(dss||[]).filter(function(d){return (d.projectIds||[]).indexOf(p.id)>=0;}), out2=[];
+  for(var i=0;i<mine.length;i++){
+    var recs=await _vomMgrReq(db,'images',function(s){return s.index('dsId').getAll(mine[i].id);});
+    out2.push({id:mine[i].id,name:mine[i].name,count:(recs||[]).length,
+               edited:(recs||[]).filter(function(r){return r.edits;}).length,
+               note:mine[i].note||'',updated:mine[i].updated||mine[i].created||0,where:'browser'});
+  }
+  return out2.sort(function(a,b){return _vomNat(a.name,b.name);});
+}
+
+/* The dataset's images as ordinary File objects, ready to hand to whatever the
+   tool already does with a drop.
+
+   These are the ORIGINALS. Edits made in the Manager are stored as recipes
+   rather than baked pixels, deliberately: a crop applied on the way out would
+   silently change what a downstream measurement means, and re-encoding a JPEG
+   to hand it over would alter the very colours the Analyzer is there to
+   measure. The picker says so rather than leaving it to be discovered. */
+async function vomOpenDataset(p,handle,dsId,onProgress){
+  if(!p) return [];
+  if(p.store==='folder'){
+    if(!handle) throw new Error('the project folder is not connected');
+    var root=await handle.getDirectoryHandle('datasets',{create:false});
+    var dir=null,doc=null;
+    for await (var e of root.entries()){
+      if(e[1].kind!=='directory') continue;
+      try{
+        var d=JSON.parse(await (await (await e[1].getFileHandle('dataset.json')).getFile()).text());
+      }catch(err){ continue; }
+      if(d&&d.id===dsId){ dir=e[1]; doc=d; break; }
+    }
+    if(!dir) throw new Error('that dataset is no longer in the project folder');
+    var ex={}; (doc.excluded||[]).forEach(function(n){ex[n]=1;});
+    var hs={},names=[];
+    for await (var f of dir.entries())
+      if(f[1].kind==='file'&&VOM_IMG_RE.test(f[0])&&!ex[f[0]]) hs[f[0]]=f[1];
+    /* The manifest's order first. That is the order the Manager showed them in,
+       and a tool that quietly reshuffled a curated sequence would be wrong in a
+       way nobody would think to check. Anything on disk the manifest has not
+       heard of follows, naturally sorted. */
+    (doc.images||[]).forEach(function(i){ if(hs[i.file]&&names.indexOf(i.file)<0) names.push(i.file); });
+    Object.keys(hs).sort(_vomNat).forEach(function(n){ if(names.indexOf(n)<0) names.push(n); });
+    var files=[];
+    for(var i=0;i<names.length;i++){
+      try{ files.push(await hs[names[i]].getFile()); }catch(err){}
+      if(onProgress) onProgress(i+1,names.length);
+    }
+    return files;
+  }
+  var db=await vomManagerDb();
+  if(!db) return [];
+  var recs=await _vomMgrReq(db,'images',function(s){return s.index('dsId').getAll(dsId);});
+  (recs||[]).sort(function(a,b){return _vomNat(a.name,b.name);});
+  var out=[];
+  for(var j=0;j<recs.length;j++){
+    var r=recs[j],b=null;
+    try{ b=await _vomMgrReq(db,'blobs',function(s){return s.get(r.id);}); }catch(err){}
+    if(!b||!b.blob) continue;         /* a folder-held record inside a browser project */
+    out.push(new File([b.blob],r.origName||r.name,
+      {type:r.type||b.blob.type||'image/jpeg',lastModified:r.dateMs||r.added||Date.now()}));
+    if(onProgress) onProgress(j+1,recs.length);
+  }
+  return out;
+}
+
+/* One output back as a File — the Visualizer's way in, since what it consumes
+   is a CSV another tool produced rather than a folder of images. */
+async function vomOpenOutput(p,handle,o){
+  if(!p||!o) return null;
+  if(p.store==='folder'){
+    if(!handle) throw new Error('the project folder is not connected');
+    var root=await handle.getDirectoryHandle('outputs',{create:false});
+    var td=await root.getDirectoryHandle(o.tool);
+    return await (await td.getFileHandle(o.name)).getFile();
+  }
+  var rec=await _vomTx('outputs','readonly',function(s){return s.get(o.id);});
+  if(!rec||!rec.blob) return null;
+  return new File([rec.blob],rec.name,{type:rec.type||'text/csv',lastModified:rec.created||Date.now()});
+}
 /*__VOM_PROJECTJS_END__*/
 </script>
 
@@ -3203,6 +3396,10 @@ async function vomSendOutput(blob, filename, params){
     var saved = await vomSaveOutput(vomProject, vomHandle, {tool:vomToolSlug, name:filename, blob:blob});
     await vomLogRun(vomProject, vomHandle, {
       tool: vomToolSlug, version: vomToolVersion,
+      /* If these files came out of the project, say which dataset. A run record
+         naming an output and no input is half a methods section. */
+      datasetId: vomOpenedDataset ? vomOpenedDataset.id : null,
+      datasetName: vomOpenedDataset ? vomOpenedDataset.name : '',
       params: params || {}, outputs: [saved.name],
     });
     vomToast('Saved into ' + vomProject.name);
@@ -3248,14 +3445,166 @@ function vomRenderProjBar(){
     (needs
       ? '<button type="button" onclick="vomConnect()">Connect folder</button>'
       : '<span class="pb-dest">outputs are saved here</span>') +
+    (vomIntake && !needs
+      ? '<button type="button" class="pb-open" onclick="vomPickOpen()">' +
+        (vomIntakeKind === 'csv' ? 'Open a CSV from the project' : 'Open a dataset') + '</button>'
+      : '') +
     '<a class="pb-link" href="' + HUB + '">Manage projects &rsaquo;</a>';
+}
+
+/* ── Opening something out of the project ─────────────────────────────────
+   The tool declares ONE intake — the same seam the folder-drop handler uses —
+   so opening from a project goes down the identical path as dropping the files
+   in by hand. Two paths into a tool is how one of them ends up subtly
+   different from the other. */
+var vomIntake = null, vomIntakeKind = 'images';
+
+function vomPickEl(){
+  var el = document.getElementById('vomPick');
+  if(el) return el;
+  el = document.createElement('div');
+  el.id = 'vomPick';
+  el.addEventListener('click', function(ev){ if(ev.target === el) vomPickClose(); });
+  /* Captured at the window, because several of these tools bind their own
+     Escape handler and a dialog you cannot dismiss is worse than no dialog. */
+  window.addEventListener('keydown', function(ev){
+    if(ev.key === 'Escape' && el.classList.contains('on')){ ev.stopPropagation(); vomPickClose(); }
+  }, true);
+  document.body.appendChild(el);
+  return el;
+}
+function vomPickClose(){ var el = document.getElementById('vomPick'); if(el) el.classList.remove('on'); }
+
+function _vomPickShow(title, note, rows, foot){
+  var el = vomPickEl();
+  el.innerHTML =
+    '<div class="pk" role="dialog" aria-modal="true" aria-label="' + vomEsc(title) + '">' +
+      '<div class="pk-head"><h3>' + vomEsc(title) + '</h3>' +
+        (note ? '<p>' + note + '</p>' : '') + '</div>' +
+      '<div class="pk-body">' + rows + '</div>' +
+      '<div class="pk-foot"><button type="button" onclick="vomPickClose()">Close</button>' +
+        (foot ? '<span class="pk-note">' + foot + '</span>' : '') + '</div>' +
+    '</div>';
+  el.classList.add('on');
+}
+
+async function vomPickOpen(){
+  if(!vomProject || !vomIntake) return;
+  if(vomProject.store === 'folder' && vomAccess !== 'ok'){
+    if(!await vomConnect()) return;
+  }
+  _vomPickShow(vomIntakeKind === 'csv' ? 'Open a CSV from the project' : 'Open a dataset',
+               'Reading ' + vomEsc(vomProject.name) + '…', '<div class="pk-empty">One moment…</div>', '');
+  try{
+    if(vomIntakeKind === 'csv') await _vomPickCsv();
+    else await _vomPickDatasets();
+  }catch(e){
+    _vomPickShow('Could not read the project', '',
+      '<div class="pk-empty">' + vomEsc(e.message || String(e)) + '</div>', '');
+  }
+}
+
+async function _vomPickDatasets(){
+  var list = await vomDatasets(vomProject, vomHandle);
+  var usable = list.filter(function(d){ return d.count > 0; });
+  if(!usable.length){
+    _vomPickShow('Open a dataset',
+      'Nothing to open yet.',
+      '<div class="pk-empty">This project has no datasets with images in it. Curate one in ' +
+      '<b>Image Manager</b> and add it to the project, then it will appear here.</div>',
+      '');
+    return;
+  }
+  var edited = usable.reduce(function(n, d){ return n + (d.edited || 0); }, 0);
+  var rows = usable.map(function(d, i){
+    return '<button type="button" class="pk-row" onclick="vomPickTake(' + i + ')">' +
+      '<b>' + vomEsc(d.name) + '</b>' +
+      '<span>' + d.count + ' image' + (d.count === 1 ? '' : 's') +
+      (d.edited ? ' · ' + d.edited + ' with edits recorded' : '') +
+      (d.note ? ' · ' + vomEsc(d.note.slice(0, 70)) : '') + '</span></button>';
+  }).join('');
+  window.__vomPickList = usable;
+  _vomPickShow('Open a dataset',
+    'From <b>' + vomEsc(vomProject.name) + '</b>. These are the original files — ' +
+    'edits made in Image Manager are kept as a recipe, not baked into the pixels, ' +
+    'so what arrives here is exactly what your camera wrote.',
+    rows,
+    edited ? edited + ' image(s) carry edits that are not applied here.' : '');
+}
+
+async function vomPickTake(i){
+  var d = (window.__vomPickList || [])[i];
+  if(!d) return;
+  _vomPickShow('Opening ' + d.name, '', '<div class="pk-empty">Reading ' + d.count + ' file(s)…</div>', '');
+  var files;
+  try{ files = await vomOpenDataset(vomProject, vomHandle, d.id); }
+  catch(e){
+    _vomPickShow('Could not open that dataset', '',
+      '<div class="pk-empty">' + vomEsc(e.message || String(e)) + '</div>', '');
+    return;
+  }
+  if(!files.length){
+    _vomPickShow('Nothing to open', '',
+      '<div class="pk-empty">No readable files were found for that dataset. If this is a folder ' +
+      'project, the images may have been moved or renamed outside the tool.</div>', '');
+    return;
+  }
+  vomPickClose();
+  /* The dataset comes with the files, so a run logged after this can say which
+     one it measured rather than leaving a provenance record that names a file
+     and nothing else. */
+  vomOpenedDataset = {id:d.id, name:d.name, count:files.length};
+  try{ vomIntake(files); }catch(e){ alert('This tool could not take those files: ' + (e.message||e)); }
+}
+var vomOpenedDataset = null;
+
+async function _vomPickCsv(){
+  var outs = (await vomOutputs(vomProject, vomHandle)).filter(function(o){
+    return /\.(csv|tsv|txt)$/i.test(o.name);
+  });
+  if(!outs.length){
+    _vomPickShow('Open a CSV from the project', 'Nothing to open yet.',
+      '<div class="pk-empty">No CSVs have been saved into this project. Run the ' +
+      '<b>Batch Image Analyzer</b> with this project open and its results will land here.</div>', '');
+    return;
+  }
+  window.__vomPickList = outs;
+  var rows = outs.map(function(o, i){
+    return '<button type="button" class="pk-row" onclick="vomPickTakeCsv(' + i + ')">' +
+      '<b>' + vomEsc(o.name) + '</b><span>' + vomEsc(o.tool) +
+      (o.size ? ' · ' + Math.max(1, Math.round(o.size / 1024)) + ' KB' : '') + '</span></button>';
+  }).join('');
+  _vomPickShow('Open a CSV from the project',
+    'Files saved into <b>' + vomEsc(vomProject.name) + '</b> by the other tools.', rows, '');
+}
+
+async function vomPickTakeCsv(i){
+  var o = (window.__vomPickList || [])[i];
+  if(!o) return;
+  var f;
+  try{ f = await vomOpenOutput(vomProject, vomHandle, o); }
+  catch(e){ f = null; }
+  if(!f){
+    _vomPickShow('Could not open that file', '',
+      '<div class="pk-empty">It may have been moved or removed since the project last listed it.</div>', '');
+    return;
+  }
+  vomPickClose();
+  try{ vomIntake([f]); }catch(e){ alert('This tool could not take that file: ' + (e.message||e)); }
 }
 function vomEsc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
-async function vomInitProjBar(version, slug){
+/* opts = {kind:'images'|'csv', intake:function(files){}}. Optional: a tool that
+   passes none simply has no Open button, which is what the three-argument form
+   did before this existed. */
+async function vomInitProjBar(version, slug, opts){
   vomToolVersion = version || '';
   vomToolSlug = slug || (location.pathname.match(/\/([a-z0-9-]+)\/?$/) || [])[1] || 'tool';
+  if(opts && typeof opts.intake === 'function'){
+    vomIntake = opts.intake;
+    vomIntakeKind = opts.kind || 'images';
+  }
   try{
     var id = await vomCurrentId();
     vomProject = id ? await vomProjectGet(id) : null;
@@ -3265,7 +3614,7 @@ async function vomInitProjBar(version, slug){
 }
 /*__VOM_PROJBARJS_END__*/
 /*__VOM_PROJBARWIRE_START__*/
-window.addEventListener("DOMContentLoaded", function(){ vomInitProjBar('', "image-colour-visualizer"); });
+window.addEventListener("DOMContentLoaded", function(){ vomInitProjBar('', "image-colour-visualizer", {kind:"csv", intake:function(files){ handleCsvFile(files[0]); }}); });
 /*__VOM_PROJBARWIRE_END__*/
 </script>
 </body>
