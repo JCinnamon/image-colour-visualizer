@@ -411,6 +411,19 @@
     }
     .stats-table td:first-child { color: var(--text-muted); width: 55%; }
     .stats-table tr:last-child td { border-bottom: none; }
+    .stats-foot { font-size: 0.72rem; color: var(--text-muted); margin: 10px 2px 0; line-height: 1.45; }
+    /* The selection, listed. A count says how many; this says which. */
+    /* The panel scrolls as a whole now, so the swatches do not need a
+       scroller of their own inside it. */
+    .sel-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; padding: 2px; }
+    .sel-list:empty { display: none; }
+    .sel-sw { width: 26px; height: 26px; border-radius: 5px; border: 1px solid rgba(15,43,61,0.28);
+              cursor: pointer; position: relative; padding: 0; }
+    .sel-sw:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .sel-sw::after { content: '×'; position: absolute; inset: 0; display: none;
+                     align-items: center; justify-content: center; font-size: 15px;
+                     color: #fff; text-shadow: 0 0 3px rgba(0,0,0,0.9); }
+    .sel-sw:hover::after { display: flex; }
 
     /* Stats toggle button in viz-tabs */
     .viz-tab-spacer { flex: 1; }
@@ -568,9 +581,13 @@
    it ran across the top. Stretched to the panel's height that centred its
    single panel vertically and left a band of nothing above the first
    control. As a block it just stacks from the top. */
-#rightbar #vizToolbar{display:block; flex:1 1 auto; overflow-y:auto; overflow-x:hidden;
-  min-height:0; padding:.5rem .55rem; margin:0}
-#rightbar #statusBox{flex:0 0 auto; margin-top:.7rem}
+/* Only as tall as the controls it holds — `max-height` rather than a flex
+   share, so a short panel does not leave a blank half. */
+#rightbar #vizToolbar{display:block; flex:0 1 auto; overflow-y:auto; overflow-x:hidden;
+  min-height:0; max-height:60%; padding:.5rem .55rem; margin:0}
+/* And Now showing takes everything that is left, which is most of it. */
+#rightbar #statusBox{flex:1 1 auto; margin-top:.7rem; min-height:0;
+  overflow-y:auto; overscroll-behavior:contain}
 #rightbar.collapsed #rightGrip{display:none}
 /* And the collapse has to outrank `#rightbar{width:var(--rightbar-w)}`
    above — the same inline-vs-class trap, one specificity level up. */
@@ -682,7 +699,7 @@
 
 /* ── Status box, foot of the display panel ─────────────────────────── */
 #statusBox{
-  margin-top:auto; padding:.55rem .6rem; border-radius:var(--radius,6px);
+  margin-top:.7rem; padding:.55rem .6rem; border-radius:var(--radius,6px);
   background:var(--accent-light); border:1px solid var(--accent);
   font-size:.75rem; color:var(--text); line-height:1.45;
 }
@@ -713,8 +730,21 @@
 .rightbar #vizToolbar{flex:0 0 auto}
 
 /* ── Plot area: no decorative margin, the picture takes the room ───── */
-.viz-container{padding:.4rem !important; display:flex; align-items:center; justify-content:center}
-.viz-container > #vizCanvas, .viz-container > #plotlyDiv{margin:auto}
+/* `safe center` centres while the content fits and falls back to start
+   alignment the moment it does not. Plain `center` on an overflowing flex
+   container centres the overflow as well, pushing half of it above the
+   top edge — and the scroll origin IS the top edge, so that half is
+   unreachable. Measured on the grid: a 900px canvas in a 784px box, its
+   first row 58px above the container with scrollTop already 0.
+
+   `margin:auto` on the children did the same thing one level down, so it
+   goes too. */
+.viz-container{padding:.4rem !important; display:flex;
+  align-items:safe center; justify-content:safe center;
+  /* The square views take their WIDTH from the container's height, so a
+     scrollbar arriving and changing `clientWidth` is enough to start a
+     render loop. The gutter is reserved either way. */
+  scrollbar-gutter:stable}
 #plotlyDiv{min-height:0}
 /* ══ end VOMV2.2 ════════════════════════════════════════════════════ */
 
@@ -880,9 +910,123 @@
   .vt-sep{display:none}
 }
 
+/* ── The readout line ────────────────────────────────────────────────
+   Fixed under the plot, one row high, always present once data is loaded.
+   It replaces a floating tooltip that covered the picture it described. */
+#hoverBar{
+  /* A FIXED height, not a minimum. Sized by its contents it was one
+     height empty and another with a swatch in it, and since it shares a
+     column with the plot, every hover resized the plot underneath — which
+     on a 3D view re-armed the camera fit and on the wheel re-sized the
+     square. Measured at ten pixels, which was plenty. */
+  display:none; align-items:center; gap:.5rem; flex:0 0 auto;
+  box-sizing:border-box; height:30px;
+  margin:.35rem 0 0; padding:.3rem .6rem;
+  background:var(--bg-white); border:1px solid var(--border);
+  border-radius:var(--radius,6px);
+  font-size:.74rem; color:var(--text); font-variant-numeric:tabular-nums;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+#hoverBar.visible{display:flex}
+#hoverBar.idle{color:var(--text-muted); font-style:italic}
+#hoverBar i{width:15px; height:15px; border-radius:3px; flex:0 0 auto;
+  border:1px solid rgba(15,43,61,.3)}
+#hoverBar b{font-family:var(--vom-mono,monospace); font-weight:600}
+#hoverBar span{color:var(--text-muted)}
+#hoverBar span::before{content:'·'; margin-right:.5rem; opacity:.5}
+
+/* ── Map-style controls ──────────────────────────────────────────────
+   Zoom and Select, on the plot, in the corner a web map puts them. They
+   are here rather than in the toolbar because Select belongs to every
+   view and the toolbar is per-view — and because the toolbar row they
+   used to occupy was vertical space the plot wanted. */
+#mapCtl{
+  position:absolute; z-index:29; top:8px; left:8px;
+  display:flex; flex-direction:column; align-items:stretch; gap:1px; padding:3px;
+  background:rgba(255,255,255,.93); border:1px solid var(--border);
+  border-radius:8px; box-shadow:0 2px 8px rgba(15,28,36,.14);
+}
+#mapCtl.hidden{display:none}
+#mapCtl .mc-btn{
+  width:30px; height:28px; display:flex; align-items:center; justify-content:center;
+  padding:0; cursor:pointer; background:none; border:0; border-radius:5px;
+  color:var(--text-muted); font-family:inherit;
+}
+#mapCtl .mc-btn svg{width:18px; height:18px; fill:none; stroke:currentColor;
+  stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round}
+/* The arrow is a solid shape; the rest are line drawings. */
+#mapCtl #btnDefMode svg{fill:currentColor; stroke-width:1.1}
+#mapCtl .mc-marquee{stroke-width:1.9}
+/* Hovering a button that is already on used to repaint it — measured
+   green-behind-white at rest, pale-behind-green hovered, so pointing at
+   the active mode looked like switching it off. */
+#mapCtl .mc-btn:hover:not(:disabled):not(.on){background:var(--bg-page); color:var(--accent)}
+#mapCtl .mc-btn:disabled{opacity:.3; cursor:default}
+#mapCtl .mc-btn.on{background:var(--accent); color:#fff}
+#mapCtl .mc-sep{height:1px; background:var(--border); margin:2px 4px}
+
+/* ── The dock ──────────────────────────────────────────────────────────
+   Until v3.1 the pin card opened at the pointer. 224×280px of it, on top
+   of the plot, exactly where someone who has just clicked is most likely
+   to click next — and on the strip, which is only ~190px tall, it covered
+   the whole height. The second click of any multi-select hit the card
+   instead of the picture, which is why selecting several colours in a row
+   appeared to keep only the last one.
+
+   So both cards dock in one corner: the panel on the left, the pin card on
+   the right, laid out right-to-left so the pin card holds the corner and
+   the panel grows inward. `--dock-right` is set from the plot key's width
+   when the key is showing, so the dock sits over the plot rather than over
+   the reading beside it. */
+#selDock{
+  position:absolute; z-index:30; top:8px; right:var(--dock-right, 8px);
+  display:flex; align-items:flex-start; gap:8px; pointer-events:none;
+  max-width:calc(100% - 16px);
+}
+#selDock > *{pointer-events:auto}
+
+/* The box drawn while dragging. */
+#marquee{
+  position:absolute; z-index:28; pointer-events:none;
+  border:1.5px dashed #0f2b3d; background:rgba(45,123,168,.14); border-radius:3px;
+}
+#marquee.hidden{display:none}
+
+/* ── Selection, in the panel ─────────────────────────────────────────
+   Given the room a floating card could not spare: thirty swatches, a chip
+   per cluster and three actions, all visible at once. */
+#statusBox .sb-sel{margin-top:.5rem; padding-top:.5rem; border-top:1px solid var(--border)}
+#statusBox .sb-sel.hidden, #statusBox .sb-sub.hidden, #statusBox .sp-clusters.hidden{display:none}
+#statusBox .sb-sel-head{
+  display:flex; align-items:baseline; justify-content:space-between; gap:.4rem;
+  font-size:.76rem; margin-bottom:.3rem;
+}
+#statusBox .sb-sel-head strong{font-size:1rem}
+#statusBox .sb-sel-head button, #statusBox .sb-acts button{
+  font-family:inherit; font-size:.68rem; padding:.2rem .45rem; cursor:pointer;
+  border:1px solid var(--border); border-radius:5px; background:var(--bg-white);
+  color:var(--text-muted);
+}
+#statusBox .sb-acts{display:flex; gap:.3rem; margin-top:.4rem}
+#statusBox .sb-acts button{flex:1 1 auto}
+#statusBox .sb-sel-head button:hover:not(:disabled),
+#statusBox .sb-acts button:hover:not(:disabled){color:var(--accent); border-color:var(--accent)}
+#statusBox .sb-acts button:disabled{opacity:.45; cursor:default}
+#statusBox .sb-sub{font-size:.66rem; font-weight:600; letter-spacing:.04em;
+  text-transform:uppercase; color:var(--text-muted); margin:.55rem 0 .2rem}
+.sp-clusters{display:flex; flex-wrap:wrap; gap:3px}
+.sp-cl{
+  display:flex; align-items:center; gap:.22rem; cursor:pointer; font-family:inherit;
+  font-size:.66rem; padding:.16rem .32rem; border:1px solid var(--border);
+  border-radius:4px; background:var(--bg-white); color:var(--text-muted);
+}
+.sp-cl:hover{border-color:var(--accent); color:var(--accent)}
+.sp-cl i{width:10px; height:10px; border-radius:2px; display:block;
+  border:1px solid rgba(15,43,61,.25)}
+
 /* ── Pin card ──────────────────────────────────────────────────────── */
 #pinCard{
-  display:none; position:absolute; z-index:30; width:224px;
+  display:none; position:relative; z-index:30; width:224px;
   background:var(--bg-white); border:1px solid var(--border);
   border-radius:8px; box-shadow:0 12px 34px rgba(15,28,36,.22); overflow:hidden;
 }
@@ -1316,10 +1460,51 @@
       <canvas id="vizCanvas" class="hidden"></canvas>
       <div id="plotlyDiv" class="hidden"></div>
 
-      <div id="pinCard"></div>
+      <!-- VOMV3.1 · the dock. Both cards live here, in the same corner
+           every time, so a second click is never swallowed by the card the
+           first one opened. `--dock-right` steps aside for the plot key. -->
+      <!-- VOMV3.2 — the dock is one card again. The selection went back
+           to Now showing, where it does not float and does not cover the
+           colours it is describing. -->
+      <div id="selDock">
+        <div id="pinCard"></div>
+      </div>
+      <!-- VOMV3.2 · a map's control cluster, on the plot, in every view.
+           Zoom means nothing on the strip and the grid, so there it greys
+           out rather than disappearing and moving Select around. -->
+      <!-- VOMV3.3 · stacked, wordless, one job each, the way a web map
+           does it. Rotate is what a drag does when neither mode is on, so
+           the common gesture needs no button at all. -->
+      <div id="mapCtl" class="hidden">
+        <button class="mc-btn" type="button" data-zoom="in" title="Zoom in">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 5v10M5 10h10"/></svg></button>
+        <button class="mc-btn" type="button" data-zoom="out" title="Zoom out">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h10"/></svg></button>
+        <button class="mc-btn" type="button" data-resetview="1" title="Reset the view to its default framing">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 8a6 6 0 1 0 .4 4"/><path d="M15.8 3.6V8h-4.4"/></svg></button>
+        <span class="mc-sep"></span>
+        <button class="mc-btn" type="button" id="btnDefMode"
+                title="Inspect: click a colour to read it, drag to turn a 3D view">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3l10 6.2-4.3 1.1L13 15l-2 .9-2.2-4.6L5.6 14z"/></svg></button>
+        <button class="mc-btn" type="button" id="btnSelMode"
+                title="Select: click a colour to add it, or drag a box over a group">
+          <svg viewBox="0 0 20 20" aria-hidden="true" class="mc-marquee">
+            <path d="M3.5 6.5v-3h3M13.5 3.5h3v3M16.5 13.5v3h-3M6.5 16.5h-3v-3"/>
+            <path d="M9 3.5h2M9 16.5h2M3.5 9v2M16.5 9v2" opacity=".55"/>
+          </svg></button>
+        <button class="mc-btn" type="button" id="btnPanMode"
+                title="Pan: drag to slide the view">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 9.5V4.6a1.2 1.2 0 0 1 2.4 0v4M9.4 9V3.6a1.2 1.2 0 0 1 2.4 0V9M11.8 9.2V4.8a1.2 1.2 0 0 1 2.4 0v6.4c0 3-1.9 5.2-4.6 5.2-2.3 0-3.3-1-4.5-2.8L3.6 11a1.2 1.2 0 0 1 1.9-1.4L7 11.4"/></svg></button>
+      </div>
+      <div id="marquee" class="hidden"></div>
       <!-- VOMV2.4 · the reading, in the width a cube cannot use -->
       <aside id="plotKey"></aside>
     </div>
+
+    <!-- VOMV3.2 · hover, without a floating box. A fixed line under the
+         plot: nothing is covered, and the colour under the pointer is
+         named as fast as the pointer moves. -->
+    <div id="hoverBar" class="idle">Hover a colour to read it</div>
 
     <!-- Stats slide-in drawer -->
     <div id="statsDrawer">
@@ -1338,7 +1523,6 @@
     <div id="rightGrip" title="Drag to resize"></div>
     <span class="rail-label">Display</span>
     <span class="rb-title" id="rbTitle">Display</span>
-    <div class="ctl-note" id="vizNote" style="margin:0 0 .7rem"></div>
     <div class="viz-toolbar visible" id="vizToolbar">
       <!-- Scatter -->
       <div class="vt-panel" id="vtScatter">
@@ -1367,14 +1551,6 @@
           <div class="vt-btns">
             <button class="vt-btn active" data-scatpaint="true">True colour</button>
             <button class="vt-btn" data-scatpaint="cluster">By cluster</button>
-          </div>
-        </div>
-        <div class="vt-group">
-          <span class="vt-label">Zoom</span>
-          <div class="vt-zoom">
-            <button class="vt-btn" type="button" data-zoom="out" title="Zoom out">−</button>
-            <button class="vt-btn vt-zreset" type="button" data-resetview="1" title="Back to the default framing">Reset</button>
-            <button class="vt-btn" type="button" data-zoom="in" title="Zoom in">+</button>
           </div>
         </div>
       </div>
@@ -1409,9 +1585,6 @@
             <option value="cone">HSV cone</option>
             <option value="sphere">Colour sphere</option>
           </select>
-          <span class="ctl-note visible" style="margin-top:.2rem">A cylinder view
-            would be the same picture as a LAB a* × b* × L* scatter — that lives
-            on the Scatter tab.</span>
         </div>
         <div class="vt-group" id="wheelAngleGroup">
           <span class="vt-label">Angle</span>
@@ -1436,14 +1609,6 @@
           <span class="vt-label">Dots</span>
           <input type="range" id="wheelDotSize2" class="vt-range" min="1" max="12" value="1" step="0.5">
           <span class="vt-val" id="wheelDotSizeLabel2">Auto</span>
-        </div>
-        <div class="vt-group" id="wheelResetGroup">
-          <span class="vt-label">Zoom</span>
-          <div class="vt-zoom">
-            <button class="vt-btn" type="button" data-zoom="out" title="Zoom out">−</button>
-            <button class="vt-btn vt-zreset" type="button" data-resetview="1" title="Back to the default framing">Reset</button>
-            <button class="vt-btn" type="button" data-zoom="in" title="Zoom in">+</button>
-          </div>
         </div>
         <div class="vt-group" id="wheelChromeGroup">
           <span class="vt-label">BG</span>
@@ -1486,12 +1651,23 @@
         <span>Isolated <strong id="isoCount">0</strong> of <strong id="isoTotal">0</strong></span>
         <button type="button" id="btnIsoClear">Show all</button>
       </div>
-      <div class="sb-chip hidden" id="sbSel">
-        <span><strong id="selCount">0</strong> selected</span>
-        <button type="button" id="btnSelIsolate">Isolate</button>
-        <button type="button" id="btnSelExport">↓ CSV</button>
-        <button type="button" id="btnSelClear">Clear</button>
+      <!-- VOMV3.2 · the selection, in the panel and given room. It was a
+           chip here in v3.0, a floating panel in v3.1, and neither had
+           space to show which thirty colours were picked. -->
+      <div class="sb-sel hidden" id="sbSel">
+        <div class="sb-sel-head"><span><strong id="selCount">0</strong> selected</span>
+          <button type="button" id="btnSelClear" title="Let go of all of them">Clear</button></div>
+        <div class="sel-list" id="selList"></div>
+        <div class="sb-acts">
+          <button type="button" id="btnSelIsolate"
+                  title="Keep only these colours and recompute the clusters and statistics on them">Isolate</button>
+          <button type="button" id="btnSelExport"
+                  title="Download these colours as a CSV">↓ Selected</button>
+        </div>
       </div>
+      <div class="sb-sub hidden" id="selClusterLabel">Select a whole cluster</div>
+      <div class="sp-clusters hidden" id="selClusters"></div>
+      <div class="sb-hint" id="selHint"></div>
     </div>
   </aside>
 
@@ -1504,7 +1680,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v2.9';   /* VOMV2 — bump with every change to this tool */
+const APP_VERSION = 'v3.4';   /* VOMV2 — bump with every change to this tool */
 
 // ═══════════════════════════════════════════════════════════
 // COLOR MATH
@@ -1942,6 +2118,21 @@ function sqDist(a, b) {
   return d;
 }
 
+/* k-means hands back labels in whatever order it happened to seed them,
+   so "cluster 3" meant nothing between two runs and nothing at all next
+   to an Analyzer file, where clusters are numbered by size with the
+   largest first. Renumbering here rather than at each place a number is
+   shown means the panel, the plot key, the hover card, the pin card and
+   both CSVs cannot disagree about which cluster is which. */
+function rankLabels(labels, k) {
+  const counts = new Array(k).fill(0);
+  for (const l of labels) counts[l] = (counts[l] || 0) + 1;
+  const order = counts.map((n, i) => [n, i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+  const rank = new Array(k);
+  order.forEach(([, i], r) => { rank[i] = r; });
+  return labels.map(l => rank[l]);
+}
+
 function kmeans(colors, k, space) {
   const n = colors.length;
   if (n <= k) return colors.map((_, i) => i);
@@ -2185,15 +2376,22 @@ function renderStrip(canvas, sorted, numClusters, showBorders, axisOpts) {
     }
   }
 
-  /* VOMV2 — veil the unselected rather than hiding them: a selection read
-     against the whole distribution is the reason to make one. */
+  /* The selection marks itself and nothing else changes — the set you are
+     picking from has to stay legible while you pick. A dark bar top and
+     bottom with a white line inside it, the same white-on-dark pairing the
+     rings use, at about twice the old weight. */
   if (state.selection.size) {
     ctx.save();
-    ctx.fillStyle = 'rgba(255,255,255,0.74)';
+    const mk = 4;
     for (let i = 0; i < n; i++) {
-      if (state.selection.has(sorted[i].uid)) continue;
-      const x0 = (i / n) * W, x1 = ((i + 1) / n) * W;
-      ctx.fillRect(x0, 0, x1 - x0 + 0.5, H);
+      if (!state.selection.has(sorted[i].uid)) continue;
+      const x0 = (i / n) * W, w = Math.max(1.5, ((i + 1) / n) * W - x0);
+      ctx.fillStyle = 'rgba(8,20,30,0.9)';
+      ctx.fillRect(x0, 0, w, mk);
+      ctx.fillRect(x0, H - mk, w, mk);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x0, mk - 2.4, w, 2.4);
+      ctx.fillRect(x0, H - mk, w, 2.4);
     }
     ctx.restore();
   }
@@ -2222,14 +2420,17 @@ function renderGrid(canvas, sorted, showBorders) {
     ctx.fillRect(col * tile, row * tile, tile, tile);
   }
 
-  /* VOMV2 — veil unselected tiles before the outlines, so cluster edges
-     stay readable on the tiles that are still in play. */
+  /* A selected tile keeps its colour and gains a border — dark outside,
+     white inside, drawn before the cluster outlines so both stay readable. */
   if (state.selection.size) {
     ctx.save();
-    ctx.fillStyle = 'rgba(255,255,255,0.74)';
     for (let i = 0; i < n; i++) {
-      if (state.selection.has(sorted[i].uid)) continue;
-      ctx.fillRect((i % cols) * tile, Math.floor(i / cols) * tile, tile, tile);
+      if (!state.selection.has(sorted[i].uid)) continue;
+      const x = (i % cols) * tile, y = Math.floor(i / cols) * tile;
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(8,20,30,0.9)';
+      ctx.strokeRect(x + 1.8, y + 1.8, tile - 3.6, tile - 3.6);
+      ctx.lineWidth = 1.4; ctx.strokeStyle = '#ffffff';
+      ctx.strokeRect(x + 1.8, y + 1.8, tile - 3.6, tile - 3.6);
     }
     ctx.restore();
   }
@@ -2375,19 +2576,15 @@ function renderWheel(canvas, sorted, opts) {
     const x = cx + r * Math.cos(ang), y = cy + r * Math.sin(ang);
     hits.push({ i, x, y, r: dotR });
 
-    const dim = hasSel && !state.selection.has(p.uid);
-    ctx.globalAlpha = dim ? 0.14 : 1;
+    ctx.globalAlpha = 1;
     ctx.beginPath();
     ctx.arc(x, y, dotR, 0, Math.PI * 2);
     ctx.fillStyle = p.c.hex;
     ctx.fill();
-    // Clustering used to change nothing at all on this tab. A centroid-coloured
-    // ring says which cluster a point landed in without hiding its own colour.
-    if (clustered && dotR >= 3 && !dim) {
-      ctx.lineWidth = Math.max(1, dotR * 0.35);
-      ctx.strokeStyle = centroid[p.label] || p.c.hex;
-      ctx.stroke();
-    }
+    /* v3.4 — no cluster ring. It was a second colour on a mark whose whole
+       job is to be one colour, and at this dot size it was wide enough to
+       be read as the colour itself. */
+    if (hasSel && state.selection.has(p.uid)) ringOn(ctx, x, y, dotR);
     ctx.globalAlpha = 1;
   }
 
@@ -2564,8 +2761,8 @@ function renderSolid(container, sorted, geom, clustered) {
     const [x, y, z] = solidCoords(p.c, geom);
     xs.push(x); ys.push(y); zs.push(z);
     cols.push(p.c.hex);
-    lines.push(clustered ? (centroid[p.label] || p.c.hex) : p.c.hex);
-    ops.push(hasSel && !state.selection.has(p.uid) ? 0.06 : 0.9);
+    lines.push(hasSel && state.selection.has(p.uid) ? '#081e2a' : p.c.hex);
+    ops.push(0.9);
     txt.push(hoverHtml(p, clustered));
     ids.push(p.uid);
   }
@@ -2578,9 +2775,9 @@ function renderSolid(container, sorted, geom, clustered) {
   let rx = [-lim, lim], ry = [-lim, lim], rz = geom === 'sphere' ? [-lim, lim] : [-0.12, 1.16];
   const traces = [{
     type: 'scatter3d', mode: 'markers',
-    x: xs, y: ys, z: zs, text: txt, hoverinfo: 'text', customdata: ids,
-    marker: { color: cols, size: sorted.length > 4000 ? 2.5 : 4, opacity: 0.92,
-              line: { color: lines, width: clustered ? 1.2 : 0.4 } },
+    x: xs, y: ys, z: zs, text: txt, hoverinfo: 'none', customdata: ids,
+    marker: { color: cols, size: selSizes(sorted, sorted.length > 4000 ? 2.5 : 4), opacity: 0.92,
+              line: { color: lines, width: hasSel ? 2 : 0 } },
   }];
   /* The shell goes behind the points, so it is added first in paint order
      and the click handler still finds the data trace at index 0. */
@@ -2612,7 +2809,7 @@ function renderSolid(container, sorted, geom, clustered) {
   const sbox = plotBox();
   container._vom3d = {
     rx: rx, ry: ry, rz: rz, lineIdx: traces.length - 1, box: sbox.w + 'x' + sbox.h,
-    fit: !vs.camera || vs.fit !== sbox.w + 'x' + sbox.h,
+    fit: !state._selRender && (!vs.camera || !sameFrame(vs.fit, sbox.w + 'x' + sbox.h)),
     ticks: { z: zTicks.filter(t => t.v >= rz[0] && t.v <= rz[1]) },
     titles: {},
     extra: guides ? (label, P, angle) => guides(label, P, angle) : null,
@@ -3096,6 +3293,12 @@ function refine3D(gd, pass) {
   const P = projector(gd);
   if (!S || !P) return;
   pass = pass || 0;
+  /* Placing the labels moves the camera when it fits, and moving the camera
+     is what asks for the labels to be placed. The two are meant to settle
+     after one correction; this is the backstop for when they do not. */
+  const now = Date.now();
+  if (now - (gd._vomRefAt || 0) < 250 && pass > 0) return;
+  gd._vomRefAt = now;
 
   const rx = S.rx, ry = S.ry, rz = S.rz;
   const mx = (rx[0] + rx[1]) / 2, my = (ry[0] + ry[1]) / 2, mz = (rz[0] + rz[1]) / 2;
@@ -3336,6 +3539,27 @@ function camSlot() {
 
 /* `box` is the plot size the camera was fitted to; passing it says "this is
    a fitted camera", and leaving it out says "this is the reader's". */
+/* Two framings within a few per cent of one another are the same framing.
+
+   The comparison used to be a string, so one pixel counted — and the
+   rectangle moves by a pixel or several for reasons that have nothing to
+   do with framing: the readout line filling, a swatch row appearing, a
+   scrollbar. Each of those re-armed the fit, and a fit moves the camera,
+   so the picture stepped in or out while the reader was doing something
+   else entirely. Measured at 636 vs 645 — one and a half per cent.
+
+   Proportional, because what a fit cares about is the shape of the
+   rectangle, not its size in pixels; four per cent with an eight-pixel
+   floor. Dragging a panel grip to a genuinely new width is far outside
+   that, and Reset refits whatever the numbers say. */
+function sameFrame(a, b) {
+  if (!a || !b) return false;
+  const pa = String(a).split('x').map(Number), pb = String(b).split('x').map(Number);
+  if (pa.length !== 2 || pb.length !== 2) return a === b;
+  const near = (u, v) => Math.abs(u - v) <= Math.max(8, Math.max(u, v) * 0.04);
+  return near(pa[0], pb[0]) && near(pa[1], pb[1]);
+}
+
 function rememberCam(gd, box) {
   const slot = camSlot();
   const c = liveCam(gd);
@@ -3405,18 +3629,147 @@ function resetView() {
 }
 /* ── end VOMV2.2 · remembered view state ───────────────────────────── */
 
+/* VOMV3.1 — nothing dims for being unselected any more. Selecting marks
+   what is selected; Isolate is what removes the rest. */
+
+/* The ring, at roughly twice its old presence: a dark halo laid down
+   first, a white line inside it, and both further out from the dot than
+   before so a small marker is not swallowed by its own ring. White on
+   dark reads against every swatch, which a single stroke never did. */
+function ringOn(ctx, x, y, r) {
+  /* Halved for v3.4. It was sized to be found against a cluster ring
+     competing for the same edge; with that gone it only has to be found
+     against the background, and at the old weight a group of selected dots
+     merged into one dark mass. */
+  const rr = r + 2.4;
+  ctx.save();
+  ctx.lineWidth = 2.7;
+  ctx.strokeStyle = 'rgba(8,20,30,0.88)';
+  ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
+/* ── Selection operations ───────────────────────────────────────────
+   One set of verbs, so a gesture in any view means the same thing. Every
+   one of them ends at `selChanged`, which is the only place the panel and
+   the picture are told. */
+function selChanged() {
+  syncSelBar();
+  if (!state.sorted.length) return;
+  /* Marked, so the 3D renderers know this redraw is not about framing and
+     must not re-arm the fit. */
+  state._selRender = true;
+  try { renderCurrentViz(); } finally { state._selRender = false; }
+}
+
+function selApply(uids, mode) {
+  if (mode === 'replace') state.selection.clear();
+  for (const u of uids) {
+    if (mode === 'toggle' && state.selection.has(u)) state.selection.delete(u);
+    else state.selection.add(u);
+  }
+  if (uids.length) state.selAnchor = uids[uids.length - 1];
+  selChanged();
+}
+
+/* The run between two colours in the order the view is drawing them —
+   which is the sort order, so on the strip and the grid it is exactly the
+   stretch the eye reads between the two clicks. */
+function selRange(uidA, uidB, add) {
+  const s = state.sorted;
+  const i = s.findIndex(p => p.uid === uidA);
+  const j = s.findIndex(p => p.uid === uidB);
+  if (i < 0 || j < 0) return false;
+  const lo = Math.min(i, j), hi = Math.max(i, j);
+  const run = [];
+  for (let k = lo; k <= hi; k++) run.push(s[k].uid);
+  if (!add) state.selection.clear();
+  for (const u of run) state.selection.add(u);
+  state.selAnchor = uidB;
+  selChanged();
+  return true;
+}
+
+function selCluster(label, add) {
+  const uids = state.sorted.filter(p => p.label === label).map(p => p.uid);
+  if (!uids.length) return;
+  if (!add) state.selection.clear();
+  for (const u of uids) state.selection.add(u);
+  selChanged();
+}
+
+/* Ordered views — the strip and the grid — lay the colours out in sort
+   order, so a range across them is meaningful. On the wheel and the
+   scatter the neighbours on screen are not the neighbours in the list, so
+   shift-click there adds one at a time and the box is the way to take a
+   group. */
+function orderedView() { return state.vizType === 'strip' || state.vizType === 'grid'; }
+
+/* Marker sizes for a Plotly trace: everything at `base`, the selected at
+   two and a half times it. Returns the plain number when nothing is
+   selected, so the common case stays a scalar. */
+function selSizes(sorted, base) {
+  if (!state.selection.size) return base;
+  return sorted.map(p => state.selection.has(p.uid) ? base * 2.5 : base);
+}
+
 function clusterCentroidMap(sorted) {
   const stats = computeClusterStats(sorted);
   return Object.fromEntries(stats.map(s => [s.label, s.avgHex]));
 }
 
+/* Which channels the picture in front of you is drawn from. The strip and
+   the grid are drawn from the sort, the wheel from its angle and radius,
+   each solid from the three coordinates its geometry is built on, and the
+   scatter from whatever is in its axis menus. */
+function viewChannels() {
+  const v = state.vizType;
+  if (v === 'scatter') {
+    return state.scatterDim === '3d'
+      ? [state.scatX, state.scatY, state.scatZ]
+      : [state.scatX, state.scatY];
+  }
+  if (v === 'wheel') {
+    if (state.wheelMode === '3d') {
+      return state.wheelSolid === 'cylinder'
+        ? ['LCH_H', 'LCH_C', 'LAB_L']
+        : state.wheelSolid === 'sphere'
+          ? ['LCH_H', 'LCH_C', 'LAB_L']
+          : ['HSV_H', 'HSV_S', 'HSV_V'];
+    }
+    return [state.wheel.angleKey, state.wheel.radiusKey];
+  }
+  /* Ordered views: the channel the order is made of, and luminance, which
+     is the one number that means something in every sort. */
+  const s = sortChannel(sortBy.value);
+  return s ? [s, 'LUM'] : ['LUM'];
+}
+
+/* Sorting by luminance asked for luminance twice, and a wheel plotted with
+   the same channel on both axes would do the same. */
+function viewChannelList() {
+  return [...new Set(viewChannels())].filter(k => CH[k]);
+}
+
+/* One line, for the readout under the plot. */
+function hoverLine(p, clustered) {
+  const c = p.c;
+  const chans = viewChannelList()
+    .map(k => `${chShort(k)} ${chFormat(k, c)}`).join(' · ');
+  return `<i style="background:${c.hex}"></i><b>${c.hex}</b>`
+    + (clustered ? `<span>cluster ${p.label + 1}</span>` : '')
+    + (chans ? `<span>${chans}</span>` : '');
+}
+
+/* Plotly still asks for hover text per point. It goes to the readout line
+   now rather than a floating box, so this is only a fallback. */
 function hoverHtml(p, clustered) {
   const c = p.c;
-  return `<b>${c.hex}</b><br>`
-    + `H ${c.h.toFixed(0)}° · S ${(c.s * 100).toFixed(0)}% · L ${(c.l * 100).toFixed(0)}%<br>`
-    + `L* ${c.L.toFixed(1)} · a* ${c.a.toFixed(1)} · b* ${c.bv.toFixed(1)}<br>`
-    + `C*ab ${c.C.toFixed(1)} · h°ab ${c.hab.toFixed(0)}°`
-    + (clustered ? `<br>Cluster ${p.label + 1}` : '');
+  return `<b>${c.hex}</b>`
+    + (clustered ? ` · cluster ${p.label + 1}` : '');
 }
 
 /* Plotly hands back the trace-relative point index; customdata carries the
@@ -3438,17 +3791,26 @@ function bindPlotlyClick(container) {
      it was. Four pixels of slack: a click with a shaky hand still counts,
      a rotation never does. The release is watched on the window, since the
      scene captures the pointer for the duration of a drag. */
+  /* And the modifier has to come from here too. `plotly_click` on a gl3d
+     scene hands back an event object that gl-plot3d made up; it carries no
+     shiftKey, no metaKey, nothing — measured as `false` on four genuinely
+     shift-held clicks in a row while the 2D scatter, which forwards the
+     real DOM event, reported them correctly. The press below is a real
+     mousedown, so it knows. */
   let dx0 = 0, dy0 = 0, down = false, pending = null;
   container.addEventListener('mousedown', e => {
     dx0 = e.clientX; dy0 = e.clientY; down = true; pending = null;
     container._vomDragged = false;
+    container._vomMod = pickMode(e);
   }, true);
   window.addEventListener('mouseup', e => {
     down = false;
     container._vomDragged = Math.hypot(e.clientX - dx0, e.clientY - dy0) > 4;
     const p = pending;
     pending = null;
-    if (p && !container._vomDragged) handlePointActivate(p.uid, p.add);
+    if (p && !container._vomDragged && !justBanded(vizContainer)) handlePointActivate(p.uid, p.add);
+    /* The recorded modifier belongs to the press that just ended. */
+    container._vomMod = false;
   }, true);
 
   container.on('plotly_click', ev => {
@@ -3456,12 +3818,39 @@ function bindPlotlyClick(container) {
     if (!pt) return;
     const uid = pt.customdata != null ? pt.customdata : null;
     if (uid == null) return;
-    const hit = { uid: uid, add: !!(ev.event && (ev.event.shiftKey || ev.event.metaKey)) };
+    if (justBanded(vizContainer)) return;
+    /* Selecting redraws, redrawing rebuilds the scene's pick buffer, and
+       gl-plot3d then emits this event again for the point still under the
+       pointer. Left alone it recurses until the stack gives out. */
+    const now = Date.now();
+    if (container._vomLastUid === uid && now - (container._vomLastAt || 0) < 220) return;
+    container._vomLastUid = uid; container._vomLastAt = now;
+    const hit = { uid: uid, add: container._vomMod || pickMode(ev.event) };
     /* The button still being down means this arrived on the press, so the
        gesture is undecided — hold it. Otherwise the press has already been
        judged and this is a genuine click on a point. */
     if (down) pending = hit;
     else if (!container._vomDragged) handlePointActivate(hit.uid, hit.add);
+  });
+  /* The 2D scatter has Plotly's own box and lasso, which beat anything
+     drawn on top of it. `setSelMode` turns the dragmode on; this turns
+     what it produces into a selection. */
+  /* Plotly's own hover box is off; the readout line takes its place. */
+  container.on('plotly_hover', ev => {
+    const pt = ev && ev.points && ev.points[0];
+    const uid = pt && pt.customdata != null ? pt.customdata : null;
+    if (uid != null) showHover(findByUid(uid));
+  });
+  container.on('plotly_unhover', clearHover);
+
+  container.on('plotly_selected', ev => {
+    if (!ev || !ev.points) return;
+    const uids = ev.points.map(pt => pt.customdata).filter(u => u != null);
+    if (uids.length) selApply(uids, 'add');
+    Plotly.restyle(container, { selectedpoints: [null] }).catch(() => {});
+  });
+  container.on('plotly_deselect', () => {
+    Plotly.restyle(container, { selectedpoints: [null] }).catch(() => {});
   });
   container._vomClick = true;
 }
@@ -3473,8 +3862,15 @@ function renderScatter(container, sorted, mode, numClusters) {
   const hasSel    = state.selection.size > 0;
 
   const markerColors  = sorted.map(p => paint ? (centroid[p.label] || p.c.hex) : p.c.hex);
-  const outlineColors = clustered ? sorted.map(p => centroid[p.label] || p.c.hex) : markerColors;
-  const opacities     = sorted.map(p => hasSel && !state.selection.has(p.uid) ? 0.07 : 0.85);
+  /* v3.4 — the outline is the marker's own colour unless the point is
+     selected, so a mark never wears a colour that is not its own. */
+  const outlineColors = markerColors.slice();
+  const opacities     = sorted.map(() => 0.85);
+  /* Selected points are ringed rather than everything else being faded —
+     the set you are choosing from has to stay visible while you choose. */
+  if (hasSel) {
+    sorted.forEach((p, i) => { if (state.selection.has(p.uid)) outlineColors[i] = '#081e2a'; });
+  }
   const hoverText     = sorted.map(p => hoverHtml(p, clustered));
   const ids           = sorted.map(p => p.uid);
 
@@ -3503,9 +3899,9 @@ function renderScatter(container, sorted, mode, numClusters) {
     const zs = sorted.map(p => chGet(zKey, p.c));
     traces = [{
       type: 'scatter3d', mode: 'markers',
-      x: xs, y: ys, z: zs, text: hoverText, hoverinfo: 'text', customdata: ids,
-      marker: { color: markerColors, size: sorted.length > 4000 ? 3 : 5.5, opacity: 0.88,
-                line: { color: outlineColors, width: clustered ? 0.9 : 0.4 } },
+      x: xs, y: ys, z: zs, text: hoverText, hoverinfo: 'none', customdata: ids,
+      marker: { color: markerColors, size: selSizes(sorted, sorted.length > 4000 ? 3 : 5.5), opacity: 0.88,
+                line: { color: outlineColors, width: hasSel ? 2 : 0 } },
     }];
     /* Ranges come from the same Full range / Fit control the 2D plot uses;
        the axis furniture is ours, drawn inside the box. */
@@ -3517,7 +3913,7 @@ function renderScatter(container, sorted, mode, numClusters) {
     const box = plotBox();
     container._vom3d = {
       rx: rx, ry: ry, rz: rz, lineIdx: traces.length - 1, box: box.w + 'x' + box.h,
-      fit: !vs.camera || vs.fit !== box.w + 'x' + box.h,
+      fit: !state._selRender && (!vs.camera || !sameFrame(vs.fit, box.w + 'x' + box.h)),
       ticks: { x: tickList(rx[0], rx[1], CH[xKey].unit, dp(xKey)),
                y: tickList(ry[0], ry[1], CH[yKey].unit, dp(yKey)),
                z: tickList(rz[0], rz[1], CH[zKey].unit, dp(zKey)) },
@@ -3540,9 +3936,12 @@ function renderScatter(container, sorted, mode, numClusters) {
   } else {
     traces = [{
       type: 'scattergl', mode: 'markers',
-      x: xs, y: ys, text: hoverText, hoverinfo: 'text', customdata: ids,
-      marker: { color: markerColors, size: 8, opacity: opacities,
-                line: { color: outlineColors, width: clustered ? 1 : 0.5 } },
+      x: xs, y: ys, text: hoverText, hoverinfo: 'none', customdata: ids,
+      /* scattergl takes a width per point, so here the selected keep a real
+         ring and everything else has no edge at all. */
+      marker: { color: markerColors, size: selSizes(sorted, 8), opacity: opacities,
+                line: { color: outlineColors,
+                        width: hasSel ? sorted.map(p => state.selection.has(p.uid) ? 2.5 : 0) : 0 } },
     }];
     const xa = axis(xKey), ya = axis(yKey);
     if (vs.range && vs.range.x) { xa.range = vs.range.x; ya.range = vs.range.y; }
@@ -3553,6 +3952,7 @@ function renderScatter(container, sorted, mode, numClusters) {
       paper_bgcolor: 'transparent', plot_bgcolor: '#f0f5f8',
       font: { family: 'Inter, sans-serif', size: 12, color: '#5b6b7d' },
       showlegend: false,
+      dragmode: state.selMode ? 'select' : 'pan',
       height: plotBox().h,
       width: plotBox().w,
     };
@@ -3661,41 +4061,39 @@ function renderScatter_v1(container, sorted, mode, numClusters) {
 
 const tooltip = document.getElementById('tooltip');
 
+/* ── The readout line ────────────────────────────────────────────────
+   v3.2 — the floating tooltip is gone. It sat over the picture, it was
+   the third thing on the plot that appeared and disappeared on its own,
+   and on the strip it covered the very bars it was describing.
+
+   This is a fixed line under the plot. It never moves, never covers
+   anything, and says the same four things in every view: the swatch, the
+   hex, the cluster, and the channels this view is drawn from. */
+function showHover(p) {
+  const bar = $('hoverBar');
+  if (!bar) return;
+  if (!p) { bar.classList.add('idle'); bar.textContent = 'Hover a colour to read it'; return; }
+  bar.classList.remove('idle');
+  bar.innerHTML = hoverLine(p, enableClustering.checked);
+}
+function clearHover() { showHover(null); }
+
 function attachStripHover(canvas, sorted) {
   canvas.addEventListener('mousemove', e => {
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const idx = Math.max(0, Math.min(sorted.length - 1, Math.floor((x / rect.width) * sorted.length)));
-    const { c, label } = sorted[idx];
-    tooltip.style.display = 'block';
-    tooltip.style.left = (e.clientX + 12) + 'px';
-    tooltip.style.top  = (e.clientY - 8) + 'px';
-    tooltip.textContent = `${c.hex}  H${c.h.toFixed(0)}° S${(c.s*100).toFixed(0)}% L${(c.l*100).toFixed(0)}%`;
+    showHover(sorted[idx]);
   });
-  canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+  canvas.addEventListener('mouseleave', clearHover);
 }
 
 function attachGridHover(canvas, sorted) {
   canvas.addEventListener('mousemove', e => {
-    const rect = canvas.getBoundingClientRect();
-    const W = canvas.width;
-    const n = sorted.length;
-    const targetTile = Math.max(8, Math.min(48, Math.round(W / Math.ceil(Math.sqrt(n)))));
-    const cols = Math.max(1, Math.floor(W / targetTile));
-    const tile = Math.floor(W / cols);
-    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-    const y = (e.clientY - rect.top)  * (canvas.height / rect.height);
-    const col = Math.floor(x / tile), row = Math.floor(y / tile);
-    const idx = row * cols + col;
-    if (idx >= 0 && idx < sorted.length) {
-      const { c } = sorted[idx];
-      tooltip.style.display = 'block';
-      tooltip.style.left = (e.clientX + 12) + 'px';
-      tooltip.style.top  = (e.clientY - 8) + 'px';
-      tooltip.textContent = `${c.hex}  H${c.h.toFixed(0)}° S${(c.s*100).toFixed(0)}% L${(c.l*100).toFixed(0)}%`;
-    }
+    const idx = gridIndexAt(canvas, e, sorted.length);
+    showHover(idx >= 0 && idx < sorted.length ? sorted[idx] : null);
   });
-  canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+  canvas.addEventListener('mouseleave', clearHover);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3708,6 +4106,98 @@ function median(arr) {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
+/* ── VOMV3 · statistics ────────────────────────────────────────────────
+
+   Every number below is read through `chGet`, the same accessor the plots
+   use, so a channel's scale and unit are whatever the CHANNELS registry
+   says they are — which is what the Analyzer writes. There is no second
+   opinion about what HSV_S means.
+
+   Hue is circular. A linear mean of 350° and 10° is 180°, which is the
+   opposite colour; the circular mean is 0°. Circular variance replaces
+   the standard deviation: 0 when every hue agrees, 1 when they are spread
+   evenly round the wheel. Chroma-weighted, because the hue of a nearly
+   grey colour is noise and should not drag the answer about — the same
+   weighting the clustering already uses. */
+const STAT_KEYS = ['mean', 'median', 'std', 'range', 'iqr'];
+const CIRC_KEYS = ['mean', 'median', 'circvar'];
+
+function quantile(sortedVals, q) {
+  const n = sortedVals.length;
+  if (!n) return null;
+  const pos = (n - 1) * q, lo = Math.floor(pos), hi = Math.ceil(pos);
+  return sortedVals[lo] + (sortedVals[hi] - sortedVals[lo]) * (pos - lo);
+}
+
+function linStats(vals) {
+  const n = vals.length;
+  if (!n) return { mean: null, median: null, std: null, range: null, iqr: null };
+  let s = 0;
+  for (const v of vals) s += v;
+  const mean = s / n;
+  let q = 0;
+  for (const v of vals) q += (v - mean) * (v - mean);
+  const a = vals.slice().sort((x, y) => x - y);
+  return {
+    mean: mean,
+    median: quantile(a, 0.5),
+    std: Math.sqrt(q / n),
+    range: a[n - 1] - a[0],
+    iqr: quantile(a, 0.75) - quantile(a, 0.25),
+  };
+}
+
+/* The circular median is the angle that minimises total angular distance
+   to the rest — found here by testing each observed angle, which is exact
+   and fast enough for the sizes this tool handles. */
+function circStats(degs, weights) {
+  const n = degs.length;
+  if (!n) return { mean: null, median: null, circvar: null };
+  let sx = 0, sy = 0, wsum = 0;
+  for (let i = 0; i < n; i++) {
+    const w = weights ? weights[i] : 1, r = degs[i] * Math.PI / 180;
+    sx += w * Math.cos(r); sy += w * Math.sin(r); wsum += w;
+  }
+  if (!wsum) return { mean: null, median: null, circvar: null };
+  let mean = Math.atan2(sy / wsum, sx / wsum) * 180 / Math.PI;
+  if (mean < 0) mean += 360;
+  const R = Math.hypot(sx / wsum, sy / wsum);
+
+  const dist = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+  const cap = 4000;                       // enough to settle a median
+  const step = n > cap ? Math.ceil(n / cap) : 1;
+  let best = null, bestCost = Infinity;
+  for (let i = 0; i < n; i += step) {
+    let cost = 0;
+    for (let j = 0; j < n; j += step) cost += (weights ? weights[j] : 1) * dist(degs[i], degs[j]);
+    if (cost < bestCost) { bestCost = cost; best = degs[i]; }
+  }
+  return { mean: mean, median: best, circvar: 1 - R };
+}
+
+/* Every channel, every statistic, for one set of colours. */
+function channelStats(colors) {
+  const out = {};
+  const wts = colors.map(c => Math.max(0.05, Math.min(1, c.C / 40)));   // chroma weight
+  for (const [key, , , , , , circular] of CHANNELS) {
+    const vals = colors.map(c => chGet(key, c));
+    out[key] = circular ? circStats(vals, wts) : linStats(vals);
+  }
+  return out;
+}
+
+/* The colour that stands for a set. Averaged in CIELAB, where a mean is
+   perceptually sensible; a mean of gamma-encoded sRGB drifts dark and
+   washed out, and drifts further the wider the set. */
+function centroidHex(colors) {
+  const n = colors.length;
+  if (!n) return '#000000';
+  let L = 0, A = 0, B = 0;
+  for (const c of colors) { L += c.L; A += c.a; B += c.bv; }
+  const rgb = labToRgb(L / n, A / n, B / n);   // {r, g, b}, not an array
+  return rgbToHex(rgb.r, rgb.g, rgb.b);
+}
+
 function computeClusterStats(sorted) {
   const buckets = {};
   for (const { c, label } of sorted) {
@@ -3715,34 +4205,19 @@ function computeClusterStats(sorted) {
     buckets[label].push(c);
   }
   const total = sorted.length;
-  return Object.entries(buckets).map(([label, colors]) => {
-    const n = colors.length;
-    const avgR = Math.round(colors.reduce((s, c) => s + c.r, 0) / n);
-    const avgG = Math.round(colors.reduce((s, c) => s + c.g, 0) / n);
-    const avgB = Math.round(colors.reduce((s, c) => s + c.b, 0) / n);
-    const lits = colors.map(c => c.l);
-    const sats = colors.map(c => c.s);
-    const lums = colors.map(c => c.lum);
-    const hues = colors.map(c => c.h);
-    const labLs = colors.map(c => c.L);      /* VOMV2 */
-    const chromas = colors.map(c => c.C);
-    return {
-      label:   +label,
-      n,
-      pct:     (n / total * 100),
-      avgHex:  rgbToHex(avgR, avgG, avgB),
-      medHue:  median(hues),
-      medSat:  median(sats),
-      medLit:  median(lits),
-      medLum:  median(lums),
-      minLit:  Math.min(...lits),
-      maxLit:  Math.max(...lits),
-      minSat:  Math.min(...sats),
-      maxSat:  Math.max(...sats),
-      medLabL: median(labLs),      /* VOMV2 */
-      medChroma: median(chromas),
-    };
-  }).sort((a, b) => a.label - b.label);
+  const rows = Object.entries(buckets).map(([label, colors]) => ({
+    label: +label,
+    n: colors.length,
+    pct: colors.length / total * 100,          // 0–100, as the Analyzer writes it
+    avgHex: centroidHex(colors),
+    ch: channelStats(colors),
+  })).sort((a, b) => a.label - b.label);
+
+  /* The whole set as one more row, so a cluster can be read against what
+     it was drawn from without opening a second file. */
+  const all = sorted.map(p => p.c);
+  rows.all = { label: null, n: all.length, pct: 100, avgHex: centroidHex(all), ch: channelStats(all) };
+  return rows;
 }
 
 function renderClusterStats(sorted) {
@@ -3752,31 +4227,39 @@ function renderClusterStats(sorted) {
     return;
   }
   const stats = computeClusterStats(sorted);
-  const numClusters = stats.length;
 
-  const pct  = v => v.toFixed(1) + '%';
-  const deg  = v => v.toFixed(0) + '°';
-  const p100 = v => (v * 100).toFixed(1) + '%';
+  /* The panel shows the headline numbers only. Every channel and every
+     statistic goes to the CSV, where a wide table is the right shape; a
+     drawer with seventy rows per cluster is not readable. */
+  const f1 = v => (v == null ? '—' : v.toFixed(1));
+  const f2 = v => (v == null ? '—' : v.toFixed(2));
+  const deg = v => (v == null ? '—' : v.toFixed(0) + '°');
 
-  el.innerHTML = stats.map(s => `
+  const block = (s, title) => {
+    const c = s.ch;
+    return `
     <div class="stats-cluster">
       <div class="stats-cluster-head">
         <div class="stats-swatch" style="background:${s.avgHex}"></div>
-        <span>Cluster ${s.label + 1}</span>
-        <span style="margin-left:auto;font-weight:400;color:var(--text-muted)">${s.n.toLocaleString()} colours (${pct(s.pct)})</span>
+        <span>${title}</span>
+        <span style="margin-left:auto;font-weight:400;color:var(--text-muted)">${s.n.toLocaleString()} colours${s.label == null ? '' : ' (' + f1(s.pct) + '%)'}</span>
       </div>
       <table class="stats-table">
-        <tr><td>Median hue</td><td>${deg(s.medHue)}</td></tr>
-        <tr><td>Median saturation</td><td>${p100(s.medSat)}</td></tr>
-        <tr><td>Sat. range</td><td>${p100(s.minSat)} – ${p100(s.maxSat)}</td></tr>
-        <tr><td>Median lightness</td><td>${p100(s.medLit)}</td></tr>
-        <tr><td>Lightness range</td><td>${p100(s.minLit)} – ${p100(s.maxLit)}</td></tr>
-        <tr><td>Median luminance</td><td>${s.medLum.toFixed(3)}</td></tr>
-        <tr><td>Median L*</td><td>${s.medLabL.toFixed(1)}</td></tr>
-        <tr><td>Median C*ab</td><td>${s.medChroma.toFixed(1)}</td></tr>
-        <tr><td>Avg colour</td><td><code>${s.avgHex}</code></td></tr>
+        <tr><td>Hue (HSV), circular median</td><td>${deg(c.HSV_H.median)}</td></tr>
+        <tr><td>Hue spread (circular variance)</td><td>${f2(c.HSV_H.circvar)}</td></tr>
+        <tr><td>Saturation (HSV), median</td><td>${f1(c.HSV_S.median)}%</td></tr>
+        <tr><td>Value (HSV), median</td><td>${f1(c.HSV_V.median)}%</td></tr>
+        <tr><td>L* median (IQR)</td><td>${f1(c.LAB_L.median)} (${f1(c.LAB_L.iqr)})</td></tr>
+        <tr><td>C*ab median (IQR)</td><td>${f1(c.LCH_C.median)} (${f1(c.LCH_C.iqr)})</td></tr>
+        <tr><td>Centroid colour</td><td><code>${s.avgHex}</code></td></tr>
       </table>
-    </div>`).join('');
+    </div>`;
+  };
+
+  el.innerHTML = block(stats.all, 'All colours')
+    + stats.map(s => block(s, 'Cluster ' + (s.label + 1))).join('')
+    + '<p class="stats-foot">Every channel and every statistic — mean, median, '
+    + 'SD, range and IQR, circular for the two hues — is in the cluster-stats CSV.</p>';
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3794,7 +4277,13 @@ const state = {
   showBorders: true,
   scatter3dCamera: null,
   /* VOMV2 */
-  scatX: 'HSV_H', scatY: 'HSL_L', scatZ: 'HSL_S',
+  mode: 'default',       /* VOMV3.4 — 'default' | 'select' | 'pan', one at a time */
+  selMode: false,        /* VOMV3.1 — click adds instead of inspecting */
+  panMode: false,        /* VOMV3.3 — drag slides the view instead of turning it */
+  selAnchor: null,       /* the last colour clicked, for shift-click ranges */
+  /* v3.4 — one space, not a mixture. Hue along the bottom, how strong
+     that hue is up the side, and value the third axis in 3D. */
+  scatX: 'HSV_H', scatY: 'HSV_S', scatZ: 'HSV_V',
   scatterDim: '2d', scatterPaint: 'true', scatterFit: 'data', solidFrame: 'data',
   wheelMode: '2d', wheelSolid: 'cone', wheelRadiusFit: 'abs', solidShell: true,
   solidCamera: null,
@@ -4892,6 +5381,7 @@ function triggerVisualize() {
       if (enableClustering.checked) {
         const k = parseInt(numClusters.value);
         labels = kmeans(state.rawColors, k, clusterSpace.value);
+        labels = rankLabels(labels, k);
       }
       state.labels = labels;
       state.sorted = sortColors(state.rawColors, labels, sortBy.value);
@@ -4987,19 +5477,36 @@ function plotBox() {
 (function watchContainer() {
   if (typeof ResizeObserver === 'undefined') return;
   let last = { w: 0, h: 0 }, t = null;
+  /* Every size this has already drawn at, with the time it did. A layout
+     loop is a size that comes back: the container settles at A, the render
+     makes it B, B makes it A again, and nothing ever stops. Refusing a
+     size seen in the last 900ms ends that on the second pass, whatever
+     started it, while a reader dragging the panel grip — a steady stream
+     of sizes none of which repeat — is not touched at all. */
+  const seen = new Map();
   new ResizeObserver(() => {
     const b = getContainerBox();
     if (Math.abs(b.w - last.w) < 5 && Math.abs(b.h - last.h) < 5) return;
     last = b;
     clearTimeout(t);
-    t = setTimeout(() => { if (state.sorted.length) renderCurrentViz(); }, 90);
+    t = setTimeout(() => {
+      if (!state.sorted.length) return;
+      const key = Math.round(b.w / 4) + 'x' + Math.round(b.h / 4);
+      const now = Date.now();
+      for (const [k, v] of seen) if (now - v > 2000) seen.delete(k);
+      if (now - (seen.get(key) || 0) < 900) return;   // we have been here
+      seen.set(key, now);
+      renderCurrentViz();
+    }, 90);
   }).observe(vizContainer);
 })();
 
 
 function renderCurrentViz() {
+  initMarquee();
   emptyState.classList.add('hidden');
-  tooltip.style.display = 'none';
+  clearHover();
+  syncMapCtl();
   updatePlotKey();          /* VOMV2.4 — sized before the plot is */
 
   syncToolbar();
@@ -5007,6 +5514,11 @@ function renderCurrentViz() {
 
   // Update stats drawer content whenever viz updates
   renderClusterStats(state.sorted);
+
+  /* The open card is drawn from the channels this view plots, so it is
+     rebuilt whenever the view is — a channel swapped underneath it used to
+     leave it reporting the one before. */
+  if (state.pinned != null && pinCard.classList.contains('open')) pinPoint(state.pinned);
 
   /* VOMV2 — the wheel's 3D solid is a Plotly view wearing the wheel tab. */
   const solidView = state.vizType === 'wheel' && state.wheelMode === '3d';
@@ -5076,52 +5588,61 @@ btnExportPNG.addEventListener('click', () => {
   $('vizCanvas').toBlob(function(b){ if (typeof vomSendOutput === 'function') vomSendOutput(b, `colour-${state.vizType}.png`, { view: state.vizType }); else { const l = document.createElement('a'); l.download = `colour-${state.vizType}.png`; l.href = URL.createObjectURL(b); l.click(); } }, 'image/png');
 });
 
-btnExportCSV.addEventListener('click', () => {
-  // ── Colour rows ──
-  /* VOMV2 — the Analyzer's channel names, so a file written here can be
-     read straight back into either tool. */
-  const headers = ['hex','RGB_R','RGB_G','RGB_B','HSV_H','HSV_S','HSV_V',
-                   'HSL_S','HSL_L','LAB_L','LAB_A','LAB_B','LCH_C','LCH_H',
-                   'luminance','cluster'];
-  const rows = state.sorted.map(({ c, label }) =>
-    [c.hex, c.r, c.g, c.b,
-     c.h.toFixed(2), c.sv.toFixed(4), c.v.toFixed(4),
-     c.s.toFixed(4), c.l.toFixed(4),
-     c.L.toFixed(2), c.a.toFixed(2), c.bv.toFixed(2),
-     c.C.toFixed(2), c.hab.toFixed(2),
-     c.lum.toFixed(4), label
-    ].join(',')
-  );
+/* One row per colour and one row per cluster, in two files. They used to
+   be one file with a blank line and a `# Cluster Summary` comment between
+   two different tables, which no spreadsheet or `read_csv` will open. The
+   Analyzer writes clusters, image summaries and pixels as separate files
+   for the same reason. */
+function vomCsvDate() { return new Date().toISOString().slice(0, 10); }
 
-  // ── Cluster summary block ──
+function saveCsv(text, name, meta) {
+  const b = new Blob([text], { type: 'text/csv;charset=utf-8' });
+  if (typeof vomSendOutput === 'function') { vomSendOutput(b, name, meta || {}); return; }
+  const l = document.createElement('a');
+  l.download = name; l.href = URL.createObjectURL(b); l.click();
+}
+
+/* Channel values, written on the scale the registry declares — which is
+   the scale the Analyzer writes and the plots draw. */
+function csvNum(key, v) {
+  if (v == null || !isFinite(v)) return '';
+  const e = CH[key];
+  const dp = !e ? 3 : (e.max > 200 ? 0 : e.max > 1.5 ? 2 : 4);
+  return v.toFixed(dp);
+}
+
+function colourCsvText() {
+  const keys = CHANNELS.map(c => c[0]);
+  const head = ['hex', ...keys, 'cluster'];
+  const lines = state.sorted.map(({ c, label }) =>
+    [c.hex, ...keys.map(k => csvNum(k, chGet(k, c))), label + 1].join(','));
+  return [head.join(','), ...lines].join('\n') + '\n';
+}
+
+function clusterCsvText() {
   const stats = computeClusterStats(state.sorted);
-  const summaryHeaders = [
-    'cluster','n','pct','avg_hex',
-    'median_hue','median_sat','sat_min','sat_max',
-    'median_lightness','lightness_min','lightness_max',
-    'median_luminance','median_LAB_L','median_LCH_C'
-  ];
-  const p4 = v => v.toFixed(4);
-  const p2 = v => v.toFixed(2);
-  const summaryRows = stats.map(s =>
-    [s.label, s.n, (s.pct / 100).toFixed(4), s.avgHex,
-     p2(s.medHue), p4(s.medSat), p4(s.minSat), p4(s.maxSat),
-     p4(s.medLit), p4(s.minLit), p4(s.maxLit),
-     p4(s.medLum), p2(s.medLabL), p2(s.medChroma)
-    ].join(',')
-  );
+  const cols = [];
+  for (const [key, , , , , , circular] of CHANNELS) {
+    for (const st of (circular ? CIRC_KEYS : STAT_KEYS)) cols.push([key + '_' + st, key, st]);
+  }
+  const head = ['cluster', 'n', 'percentage', 'hex', ...cols.map(c => c[0])];
+  const row = s => [
+    s.label == null ? 'all' : s.label + 1,
+    s.n, s.pct.toFixed(2), s.avgHex,
+    ...cols.map(([, key, st]) => {
+      const v = s.ch[key][st];
+      if (v == null || !isFinite(v)) return '';
+      return st === 'circvar' ? v.toFixed(3) : csvNum(key, v);
+    }),
+  ].join(',');
+  return [head.join(','), ...stats.map(row), row(stats.all)].join('\n') + '\n';
+}
 
-  const csv = [
-    '# Cluster Summary',
-    summaryHeaders.join(','),
-    ...summaryRows,
-    '',
-    '# Colour Data',
-    headers.join(','),
-    ...rows,
-  ].join('\n');
-
-  const _b = new Blob([csv], { type: 'text/csv' }); if (typeof vomSendOutput === 'function') vomSendOutput(_b, 'colours.csv', { rows: rows.length }); else { const l = document.createElement('a'); l.download = 'colours.csv'; l.href = URL.createObjectURL(_b); l.click(); }
+btnExportCSV.addEventListener('click', () => {
+  if (!state.sorted.length) return;
+  const d = vomCsvDate();
+  saveCsv(colourCsvText(), `visualizer_colours_${d}.csv`, { rows: state.sorted.length });
+  saveCsv(clusterCsvText(), `visualizer_cluster-stats_${d}.csv`, { clusters: true });
 });
 
 /* VOMV2 — the overlay's handlers moved to the docked toolbar. */
@@ -5149,6 +5670,7 @@ function setLoadedColours(colors) {
   state.isolated   = false;
   state.labels     = new Array(colors.length).fill(0);
   state.selection.clear();
+  state.selAnchor = null;
   state.pinned = null;
   if (typeof pinCard !== 'undefined' && pinCard) pinCard.classList.remove('open');
 }
@@ -5157,6 +5679,7 @@ function applyIsolation(keepIds) {
   state.rawColors = state.fullColors.filter(c => keepIds.has(c._id));
   state.isolated  = state.rawColors.length !== state.fullColors.length;
   state.selection.clear();
+  state.selAnchor = null;
   state.pinned = null;
   pinCard.classList.remove('open');
   setCount(state.rawColors.length, 0);
@@ -5169,6 +5692,7 @@ function clearIsolation() {
   state.rawColors = state.fullColors;
   state.isolated  = false;
   state.selection.clear();
+  state.selAnchor = null;
   state.pinned = null;
   pinCard.classList.remove('open');
   setCount(state.rawColors.length, 0);
@@ -5178,6 +5702,142 @@ function clearIsolation() {
 
 /* The strip is the one status line: it is always there once data is loaded,
    at a fixed height, so a chip appearing never nudges the plot mid-gesture. */
+/* ── Select mode ──────────────────────────────────────────────────────
+   The modifier-free way in. While it is on, a click adds a colour instead
+   of inspecting one and a drag takes everything inside the box, in every
+   view — including the 3D ones, where drag would otherwise rotate. */
+/* Three modes, exactly one of them lit, because all three want the drag:
+   Inspect turns a 3D view and opens a card on a click, Select adds
+   colours and sweeps a box, Pan slides the picture. Nothing is implicit —
+   whichever button is green is what a drag will do.
+
+   `selMode` and `panMode` stay as the two flags everything downstream
+   reads; `mode` is only the name of which of the three is on. */
+function setMode(m) {
+  state.mode = (m === 'select' || m === 'pan') ? m : 'default';
+  state.selMode = state.mode === 'select';
+  state.panMode = state.mode === 'pan';
+  applyModes();
+}
+
+function setPanMode(on) { setMode(on ? 'pan' : 'default'); }
+function setSelMode(on) { setMode(on ? 'select' : 'default'); }
+
+function applyModes() {
+  const b = $('btnSelMode'), pb = $('btnPanMode'), db = $('btnDefMode');
+  if (b) b.classList.toggle('on', state.selMode);
+  if (pb) pb.classList.toggle('on', state.panMode);
+  if (db) db.classList.toggle('on', !state.selMode && !state.panMode);
+  const plot = $('plotlyDiv');
+  if (plot) plot.classList.toggle('sel-mode', state.selMode);
+  /* The cursor is the mode. Select gets the arrow it draws on its button,
+     Pan the open hand, and a drag in Pan closes it. */
+  const cur = state.selMode ? 'default' : state.panMode ? 'grab' : '';
+  const cv = $('vizCanvas');
+  if (cv) cv.style.cursor = state.selMode ? 'crosshair'
+        : state.panMode ? 'grab' : (state.vizType === 'wheel' ? 'default' : 'pointer');
+  if (plot) plot.style.cursor = cur;
+  /* Plotly's own box select is better than anything drawn over it, so the
+     2D scatter borrows it while Select is on; Pan is Plotly's own too. */
+  if (plot && plot.data && plot.data.length) {
+    try {
+      syncCam(plot);        /* before anything hands Plotly a layout */
+      if (plot._vom3d) {
+        /* gl3d takes its drag behaviour from the scene, not the layout.
+           `turntable` is the rotate the reader already has. */
+        Plotly.relayout(plot, { 'scene.dragmode': state.panMode ? 'pan' : 'turntable' });
+      } else if (state.vizType === 'scatter') {
+        Plotly.relayout(plot, { dragmode: state.selMode ? 'select' : 'pan' });
+      }
+    } catch (_) {}
+  }
+  syncMapCtl();
+  syncSelBar();
+}
+
+/* The control cluster is the same four buttons everywhere; zoom simply has
+   nothing to act on outside the interactive plots, so it greys out rather
+   than vanishing and shuffling Select along the row. */
+function syncMapCtl() {
+  const el = $('mapCtl');
+  if (!el) return;
+  const live = state.sorted.length > 0;
+  el.classList.toggle('hidden', !live);
+  const zoomable = state.vizType === 'scatter'
+    || (state.vizType === 'wheel' && state.wheelMode === '3d');
+  el.querySelectorAll('[data-zoom], [data-resetview]').forEach(b => { b.disabled = !zoomable; });
+  /* Panning needs somewhere to pan to. The strip, the grid and the flat
+     wheel are drawn to fit, so there is nothing outside the frame. */
+  const pb = $('btnPanMode');
+  if (pb) {
+    pb.disabled = !zoomable;
+    if (!zoomable && state.panMode) { state.mode = 'default'; state.panMode = false; applyModes(); }
+  }
+  const bar = $('hoverBar');
+  if (bar) bar.classList.toggle('visible', live);
+}
+
+/* The dock sits over the plot, so it has to step aside when the plot key
+   claims the right-hand column. */
+/* The card docks at the plot's top-right; the plot key, when it is
+   showing, owns the column to the right of the plot, so the dock steps in
+   by its width rather than sitting on top of the reading. */
+function placeDock() {
+  const dock = $('selDock'), key = $('plotKey');
+  if (!dock) return;
+  const w = key && key.classList.contains('visible') ? key.offsetWidth + 30 : 0;
+  dock.style.setProperty('--dock-right', (w + 8) + 'px');
+}
+
+function renderSelList() {
+  const box = $('selList');
+  if (!box) return;
+  const picks = state.sorted.filter(p => state.selection.has(p.uid));
+  box.classList.toggle('hidden', picks.length === 0);
+  box.innerHTML = picks.length ? picks.map(p =>
+    `<button class="sel-sw" data-uid="${p.uid}" style="background:${p.c.hex}"
+       title="${p.c.hex} — click to remove"></button>`).join('') : '';
+}
+
+/* A cluster is a group someone has already decided is a group. Taking one
+   whole is a click, not thirty. */
+function renderSelClusters() {
+  const box = $('selClusters'), lab = $('selClusterLabel');
+  if (!box) return;
+  const k = enableClustering.checked ? parseInt(numClusters.value) : 1;
+  const on = k > 1 && state.labels.some(l => l !== 0) && state.sorted.length > 0;
+  box.classList.toggle('hidden', !on);
+  if (lab) lab.classList.toggle('hidden', !on);
+  if (!on) { box.innerHTML = ''; return; }
+  const centroid = clusterCentroidMap(state.sorted);
+  const sizes = {};
+  for (const p of state.sorted) sizes[p.label] = (sizes[p.label] || 0) + 1;
+  box.innerHTML = Object.keys(sizes).map(Number).sort((a, b) => a - b).map(l =>
+    `<button class="sp-cl" data-cluster="${l}" title="Add all ${sizes[l]} colours in cluster ${l + 1}">
+       <i style="background:${centroid[l] || '#888'}"></i>${l + 1}<span style="opacity:.6">·${sizes[l]}</span>
+     </button>`).join('');
+}
+
+function syncSelPanel() {
+  const n = state.selection.size;
+  const cnt = $('selCount');
+  if (cnt) cnt.textContent = n.toLocaleString();
+  const box = $('sbSel');
+  if (box) box.classList.toggle('hidden', n === 0);
+  ['btnSelIsolate', 'btnSelExport', 'btnSelClear'].forEach(id => {
+    const b = $(id); if (b) b.disabled = n === 0;
+  });
+  renderSelList();
+  renderSelClusters();
+  const hint = $('selHint');
+  if (hint) hint.textContent = state.selMode
+    ? 'Select is on: click a colour to add it, or drag a box over a group.'
+    : (orderedView()
+        ? 'Drag a box to take a run, or turn on Select. Shift-click takes the run between two colours.'
+        : 'Drag a box to take a group, or turn on Select. ⌘/Ctrl-click adds one.');
+  placeDock();
+}
+
 function syncChips() {
   const has = state.fullColors.length > 0;
   $('statusBox').classList.toggle('hidden', !has);
@@ -5188,18 +5848,16 @@ function syncChips() {
   $('isoCount').textContent = state.rawColors.length.toLocaleString();
   $('isoTotal').textContent = state.fullColors.length.toLocaleString();
 
-  const n = state.selection.size;
-  $('sbSel').classList.toggle('hidden', n === 0);
-  $('selCount').textContent = n.toLocaleString();
+  syncSelPanel();
 
   const k = enableClustering.checked ? parseInt(numClusters.value) : 1;
   $('sbCounts').innerHTML = `<strong>${state.rawColors.length.toLocaleString()}</strong> colours`
     + (k > 1 ? ` · <strong>${k}</strong> clusters` : ' · unclustered');
   $('sbHint').textContent = {
-    strip: 'Click a bar to inspect it; shift-click to select. The scale below follows the sort.',
-    grid:  'Click a tile to inspect it; shift-click to select.',
-    scatter: 'Click a point to inspect it; shift-click to select. Drag to pan, scroll to zoom.',
-    wheel: 'Click a point to inspect it; shift-click to select.',
+    strip: 'Click a bar to inspect it, or drag a box to select a run. The scale below follows the sort.',
+    grid:  'Click a tile to inspect it, or drag a box to select a block.',
+    scatter: 'Click a point to inspect it. Drag to pan, scroll to zoom — or turn Select on and drag a box.',
+    wheel: 'Click a point to inspect it, or drag a box to select a group.',
   }[state.vizType] || '';
 }
 
@@ -5221,6 +5879,12 @@ function pinPoint(uid, clientX, clientY) {
   const clustered = state.labels.some(l => l !== 0) || enableClustering.checked;
   const row = (k, v) => `<tr><td>${k}</td><td>${v}</td></tr>`;
   const inSel = state.selection.has(uid);
+  /* v3.2 — the channels this view is drawn from, not all fourteen. Seven
+     rows of numbers that had nothing to do with the picture made the card
+     tall enough to be in the way and slow enough to read that it was
+     easier to ignore. The full set is two clicks away in the CSV. */
+  const chanRows = viewChannelList()
+    .map(k => row(chLabel(k), chFormat(k, c))).join('');
   pinCard.innerHTML =
     `<div class="pin-swatch" style="background:${c.hex}">
        <button class="pin-close" type="button" title="Close">✕</button>
@@ -5228,28 +5892,21 @@ function pinPoint(uid, clientX, clientY) {
      <div class="pin-hex"><span>${c.hex}</span>
        <button class="pin-copy" type="button">Copy</button></div>
      <table>
-       ${row('RGB', `${c.r}, ${c.g}, ${c.b}`)}
-       ${row('HSV', `${c.h.toFixed(0)}°, ${(c.sv * 100).toFixed(0)}%, ${(c.v * 100).toFixed(0)}%`)}
-       ${row('HSL', `${c.h.toFixed(0)}°, ${(c.s * 100).toFixed(0)}%, ${(c.l * 100).toFixed(0)}%`)}
-       ${row('LAB', `${c.L.toFixed(1)}, ${c.a.toFixed(1)}, ${c.bv.toFixed(1)}`)}
-       ${row('LCH', `${c.L.toFixed(1)}, ${c.C.toFixed(1)}, ${c.hab.toFixed(0)}°`)}
-       ${row('Luminance', c.lum.toFixed(4))}
+       ${chanRows}
        ${clustered ? row('Cluster', p.label + 1) : ''}
      </table>
      <div class="pin-sel">
        <button type="button" data-pin="sel">${inSel ? 'Remove from selection' : 'Add to selection'}</button>
-     </div>`;
+     </div>
+     ${clustered ? `<div class="pin-sel">
+       <button type="button" data-pin="cluster">Select cluster ${p.label + 1}</button>
+     </div>` : ''}`;
 
-  // Keep the card inside the viz area rather than letting it hang off the edge
-  const host = vizContainer.getBoundingClientRect();
-  const w = 224, h = pinCard.offsetHeight || 250;
-  let x = (clientX != null ? clientX - host.left : host.width / 2) + 14;
-  let y = (clientY != null ? clientY - host.top  : 40) - 10;
-  x = Math.max(8, Math.min(host.width  - w - 8, x));
-  y = Math.max(8, Math.min(Math.max(8, host.height - h - 8), y));
-  pinCard.style.left = x + 'px';
-  pinCard.style.top  = y + 'px';
+  /* v3.1 — the card is a child of the dock now and goes where the dock is.
+     It used to open at the pointer, which put 224×280px of it exactly where
+     the next click was going to land. */
   pinCard.classList.add('open');
+  placeDock();
 
   pinCard.querySelector('.pin-close').onclick = unpin;
   pinCard.querySelector('.pin-copy').onclick = e => {
@@ -5259,6 +5916,8 @@ function pinPoint(uid, clientX, clientY) {
            t.select(); try { document.execCommand('copy'); done(); } catch (err) {} t.remove(); }
   };
   pinCard.querySelector('[data-pin="sel"]').onclick = () => { toggleSelection(uid); pinPoint(uid, clientX, clientY); };
+  const clBtn = pinCard.querySelector('[data-pin="cluster"]');
+  if (clBtn) clBtn.onclick = () => { selCluster(p.label, true); pinPoint(uid, clientX, clientY); };
 }
 
 function unpin() {
@@ -5273,19 +5932,235 @@ function toggleSelection(uid) {
   if (state.sorted.length) renderCurrentViz();
 }
 
-/* One entry point for every view: a plain click pins, shift-click selects. */
+/* One entry point for every view.
+
+     Select mode on   — a click adds or removes, and nothing else happens.
+     shift-click      — adds or removes, whatever the mode.
+     shift-click when there is already an anchor, on an ordered view —
+                        takes the whole run between the two, which is the
+                        gesture a file list has taught everyone.
+     plain click      — inspects, as it always did.
+
+   `additive` is still passed by every caller, so nothing below the
+   gesture layer had to change. */
 function handlePointActivate(uid, additive, clientX, clientY) {
-  revealStatus();
-  if (additive) { toggleSelection(uid); return; }
+  /* Shift is the range key everywhere else on a desktop, so it is the range
+     key here: from the last colour clicked to this one, in sort order. When
+     there is nothing to range from — or the view has no order to range
+     along — it falls back to adding the one. */
+  if (additive === 'range' && state.selAnchor != null && state.selAnchor !== uid
+      && orderedView() && selRange(state.selAnchor, uid, true)) return;
+  if (additive || state.selMode) { selApply([uid], 'toggle'); return; }
+  state.selAnchor = uid;
   pinPoint(uid, clientX, clientY);
   if (state.vizType === 'wheel' && state.wheelMode === '2d' && state.sorted.length) renderCurrentViz();
+}
+
+/* Which modifier was down, as a word the line above can read.
+     shift        a range
+     ctrl / cmd   this one, on its own
+     neither      inspect, unless Select mode says otherwise */
+function pickMode(e) {
+  if (!e) return false;
+  if (e.shiftKey) return 'range';
+  if (e.metaKey || e.ctrlKey) return 'toggle';
+  return false;
+}
+
+/* ── Drag a box ───────────────────────────────────────────────────────
+   The one gesture that needs no key and no aim. `host` is whatever element
+   the pointer is over; `pick` turns the box, in client coordinates, into a
+   list of uids. Four pixels of slack so a click with a shaky hand is still
+   a click. */
+function attachMarquee(host, enabled, pick, clickPick) {
+  if (host._vomBand) return;
+  host._vomBand = true;
+  const band = $('marquee');
+  let x0 = 0, y0 = 0, live = false, armed = false, addTo = false;
+
+  const boxOf = e => ({ l: Math.min(x0, e.clientX), t: Math.min(y0, e.clientY),
+                        r: Math.max(x0, e.clientX), b: Math.max(y0, e.clientY) });
+
+  /* The nearest point to where the pointer is, within a few pixels of it. */
+  function nearestScene(gd, cx, cy, rad) {
+    const f = projector(gd), tr = gd.data && gd.data[0];
+    if (!f || !tr || !tr.x || !tr.customdata) return null;
+    const host2 = gd.getBoundingClientRect();
+    let best = null, bd = rad * rad;
+    for (let i = 0; i < tr.x.length; i++) {
+      const s = f(tr.x[i], tr.y[i], tr.z[i]);
+      const dx = host2.left + s.x - cx, dy = host2.top + s.y - cy;
+      const d = dx * dx + dy * dy;
+      if (d <= bd) { bd = d; best = tr.customdata[i]; }
+    }
+    return best;
+  }
+  attachMarquee.nearestScene = nearestScene;
+
+  host.addEventListener('mousedown', e => {
+    if (e.button !== 0 || !enabled(e)) return;
+    armed = true; live = false; x0 = e.clientX; y0 = e.clientY;
+    addTo = e.shiftKey || e.metaKey || e.ctrlKey;
+    /* Only the 3D scenes need the press stopped, and only while Select is
+       on: they are the ones that would turn under the box. The canvas
+       views never needed it — their `click` is dispatched separately — and
+       stopping it there was what broke click-to-select. */
+    const d = $('plotlyDiv');
+    if (state.selMode && d && d._vom3d && d.contains(e.target)) {
+      e.preventDefault(); e.stopPropagation();
+    }
+  }, true);
+
+  window.addEventListener('mousemove', e => {
+    if (!armed) return;
+    if (!live && Math.hypot(e.clientX - x0, e.clientY - y0) <= 4) return;
+    live = true;
+    const host2 = vizContainer.getBoundingClientRect(), b = boxOf(e);
+    band.classList.remove('hidden');
+    band.style.left   = (b.l - host2.left) + 'px';
+    band.style.top    = (b.t - host2.top) + 'px';
+    band.style.width  = (b.r - b.l) + 'px';
+    band.style.height = (b.b - b.t) + 'px';
+    if (state.selMode) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
+
+  window.addEventListener('mouseup', e => {
+    if (!armed) return;
+    armed = false;
+    band.classList.add('hidden');
+    if (!live) {
+      /* A click, not a box.
+
+         On a 3D scene the press has to be swallowed or gl-plot3d turns the
+         view under the selection box — but a swallowed press is also a
+         press gl3d never sees, and gl3d is what decides a click happened.
+         Measured with the press let through: the scene rotated under every
+         box. Measured with it swallowed: `plotly_click` never fired and a
+         click in Select mode selected nothing, 0 of 3.
+
+         So the click is resolved here instead, against the same projection
+         the axis labels are placed by. No pick buffer, no dependence on
+         gl3d having seen anything, and it works the same in all five
+         views. */
+      if (clickPick) {
+        const uid = clickPick(e);
+        if (uid != null) selApply([uid], 'toggle');
+      }
+      return;
+    }
+    live = false;
+    host._vomBanded = Date.now();      // the click that follows is not a click
+    const uids = pick(boxOf(e)) || [];
+    if (uids.length) selApply(uids, addTo ? 'add' : 'replace');
+    else if (!addTo) { state.selection.clear(); selChanged(); }
+    if (state.selMode) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
+}
+
+/* A release that ended a box must not also count as a click on whatever
+   was under the pointer. */
+function justBanded(host) { return host._vomBanded && Date.now() - host._vomBanded < 250; }
+
+/* Canvas geometry, three ways. Each returns the uids whose mark falls
+   inside the box. */
+function canvasRect(canvas, b) {
+  const r = canvas.getBoundingClientRect();
+  const sx = canvas.width / r.width, sy = canvas.height / r.height;
+  return { l: (b.l - r.left) * sx, t: (b.t - r.top) * sy,
+           r: (b.r - r.left) * sx, b: (b.b - r.top) * sy };
+}
+
+function pickStrip(canvas, sorted, b) {
+  const n = sorted.length; if (!n) return [];
+  const q = canvasRect(canvas, b), W = canvas.width;
+  const i0 = Math.max(0, Math.floor((q.l / W) * n));
+  const i1 = Math.min(n - 1, Math.ceil((q.r / W) * n) - 1);
+  const out = [];
+  for (let i = i0; i <= i1; i++) out.push(sorted[i].uid);
+  return out;
+}
+
+function pickGrid(canvas, sorted, b) {
+  const n = sorted.length; if (!n) return [];
+  const q = canvasRect(canvas, b), W = canvas.width;
+  const targetTile = Math.max(8, Math.min(48, Math.round(W / Math.ceil(Math.sqrt(n)))));
+  const cols = Math.max(1, Math.floor(W / targetTile));
+  const tile = Math.floor(W / cols);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const x = (i % cols) * tile, y = Math.floor(i / cols) * tile;
+    if (x + tile > q.l && x < q.r && y + tile > q.t && y < q.b) out.push(sorted[i].uid);
+  }
+  return out;
+}
+
+function pickWheel(canvas, sorted, b) {
+  const hits = canvas._hits; if (!hits) return [];
+  const q = canvasRect(canvas, b), out = [];
+  for (const h of hits) {
+    if (h.x >= q.l && h.x <= q.r && h.y >= q.t && h.y <= q.b) {
+      const p = sorted[h.i]; if (p) out.push(p.uid);
+    }
+  }
+  return out;
+}
+
+/* The 3D scenes have no box select of their own, so the box is tested
+   against the same projection the axis labels are placed by — the points
+   are put on screen exactly where gl-plot3d has them. */
+function pickScene(gd, b) {
+  const f = projector(gd);
+  const tr = gd.data && gd.data[0];
+  if (!f || !tr || !tr.x || !tr.customdata) return [];
+  const host = gd.getBoundingClientRect();
+  const out = [];
+  for (let i = 0; i < tr.x.length; i++) {
+    const s = f(tr.x[i], tr.y[i], tr.z[i]);
+    const cx = host.left + s.x, cy = host.top + s.y;
+    if (cx >= b.l && cx <= b.r && cy >= b.t && cy <= b.b) out.push(tr.customdata[i]);
+  }
+  return out;
 }
 
 function syncSelBar() { syncChips(); }   /* VOMV2.1 — the strip owns this now */
 
 $('btnSelClear').addEventListener('click', () => {
-  state.selection.clear(); syncSelBar();
-  if (state.sorted.length) renderCurrentViz();
+  state.selection.clear(); state.selAnchor = null; selChanged();
+});
+
+$('btnDefMode').addEventListener('click', () => setMode('default'));
+$('btnSelMode').addEventListener('click', () => setMode('select'));
+$('btnPanMode').addEventListener('click', () => setMode('pan'));
+
+/* A drag in Pan closes the hand, as a map does. */
+vizContainer.addEventListener('mousedown', () => {
+  if (state.panMode) vizContainer.style.cursor = 'grabbing';
+}, true);
+window.addEventListener('mouseup', () => { vizContainer.style.cursor = ''; }, true);
+
+/* Clicking a swatch in the list drops that colour from the selection. */
+$('selList').addEventListener('click', e => {
+  const b = e.target.closest('.sel-sw');
+  if (!b) return;
+  const uid = b.dataset.uid;
+  const hit = state.sorted.find(p => String(p.uid) === uid);
+  if (hit) toggleSelection(hit.uid);
+});
+
+/* A cluster chip takes the whole group. Shift keeps what is already there. */
+$('selClusters').addEventListener('click', e => {
+  const b = e.target.closest('.sp-cl');
+  if (!b) return;
+  selCluster(parseInt(b.dataset.cluster, 10), true);
+});
+
+/* Esc backs out one step: the card first, then the mode. It does not clear
+   the selection — a selection can be twenty minutes of picking, and Clear
+   is right there in the panel for when it should go. */
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (pinCard.classList.contains('open')) { unpin(); return; }
+  if (state.selMode) setSelMode(false);
 });
 
 /* Isolate narrows the active set to the selection and reruns the whole
@@ -5301,16 +6176,53 @@ $('btnIsoClear').addEventListener('click', clearIsolation);
 $('btnSelExport').addEventListener('click', () => {
   const rows = state.sorted.filter(p => state.selection.has(p.uid));
   if (!rows.length) return;
-  const head = ['hex','r','g','b','hue','sat_hsl','lightness','sat_hsv','value','LAB_L','LAB_A','LAB_B','LCH_C','LCH_H','luminance','cluster'];
-  const body = rows.map(({ c, label }) => [
-    c.hex, c.r, c.g, c.b, c.h.toFixed(2), c.s.toFixed(4), c.l.toFixed(4),
-    c.sv.toFixed(4), c.v.toFixed(4), c.L.toFixed(2), c.a.toFixed(2), c.bv.toFixed(2),
-    c.C.toFixed(2), c.hab.toFixed(2), c.lum.toFixed(4), label].join(','));
-  const csv = [head.join(','), ...body].join('\n');
-  const b = new Blob([csv], { type: 'text/csv' });
-  if (typeof vomSendOutput === 'function') vomSendOutput(b, 'colours-selection.csv', { rows: body.length, selection: true });
-  else { const l = document.createElement('a'); l.download = 'colours-selection.csv'; l.href = URL.createObjectURL(b); l.click(); }
+  /* The same columns as the full export, so the two files stack. */
+  const keys = CHANNELS.map(c => c[0]);
+  const head = ['hex', ...keys, 'cluster'];
+  const body = rows.map(({ c, label }) =>
+    [c.hex, ...keys.map(k => csvNum(k, chGet(k, c))), label + 1].join(','));
+  saveCsv([head.join(','), ...body].join('\n') + '\n',
+          `visualizer_selection_${vomCsvDate()}.csv`, { rows: body.length, selection: true });
 });
+
+/* The box is set up once, on the container, and works out for itself
+   which view is underneath when the drag starts.
+
+     canvas views — always; nothing else uses a drag there.
+     3D scenes    — Select mode only, since a drag otherwise rotates.
+     2D scatter   — never here; Plotly's own box select is better, and
+                    `setSelMode` switches the dragmode over to it. */
+function initMarquee() {
+  const cv = () => $('vizCanvas');
+  const gd = () => $('plotlyDiv');
+  const onCanvas = e => !cv().classList.contains('hidden') && (e.target === cv() || cv().contains(e.target));
+  attachMarquee(vizContainer,
+    e => {
+      if (!state.sorted.length || state.panMode) return false;
+      if (onCanvas(e)) return true;
+      const d = gd();
+      if (d && !d.classList.contains('hidden') && d.contains(e.target)) return !!(d._vom3d && state.selMode);
+      return false;
+    },
+    b => {
+      if (!cv().classList.contains('hidden')) {
+        if (state.vizType === 'strip') return pickStrip(cv(), state.sorted, b);
+        if (state.vizType === 'grid')  return pickGrid(cv(), state.sorted, b);
+        return pickWheel(cv(), state.sorted, b);
+      }
+      return pickScene(gd(), b);
+    },
+    /* A click. On a 3D scene the press was swallowed above, so gl3d never
+       saw it — the point under the pointer is found here instead. The
+       canvas views and the 2D scatter resolve their own clicks and want
+       nothing from this. */
+    e => {
+      if (!state.selMode) return null;
+      const d = gd();
+      if (!d || d.classList.contains('hidden') || !d._vom3d || !d.contains(e.target)) return null;
+      return attachMarquee.nearestScene(d, e.clientX, e.clientY, 14);
+    });
+}
 
 /* ── Canvas interaction: wheel hover, click, shift-click ───────────── */
 function attachWheelInteraction(canvas, sorted) {
@@ -5319,24 +6231,20 @@ function attachWheelInteraction(canvas, sorted) {
     return [(e.clientX - rect.left) * (canvas.width / rect.width),
             (e.clientY - rect.top)  * (canvas.height / rect.height)];
   };
-  canvas.style.cursor = 'default';
+  canvas.style.cursor = state.selMode ? 'crosshair' : 'default';
   canvas.addEventListener('mousemove', e => {
     const [x, y] = toCanvas(e);
     const i = wheelHitTest(canvas, x, y);
-    canvas.style.cursor = i >= 0 ? 'pointer' : 'default';
-    if (i < 0) { tooltip.style.display = 'none'; return; }
-    const p = sorted[i];
-    tooltip.style.display = 'block';
-    tooltip.style.left = (e.clientX + 12) + 'px';
-    tooltip.style.top  = (e.clientY - 8) + 'px';
-    tooltip.innerHTML = hoverHtml(p, enableClustering.checked);
+    canvas.style.cursor = state.selMode ? 'crosshair' : (i >= 0 ? 'pointer' : 'default');
+    showHover(i < 0 ? null : sorted[i]);
   });
-  canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+  canvas.addEventListener('mouseleave', clearHover);
   canvas.addEventListener('click', e => {
+    if (justBanded(vizContainer)) return;     // that was the end of a box
     const [x, y] = toCanvas(e);
     const i = wheelHitTest(canvas, x, y);
-    if (i < 0) { if (!e.shiftKey) unpin(); return; }
-    handlePointActivate(sorted[i].uid, e.shiftKey || e.metaKey, e.clientX, e.clientY);
+    if (i < 0) { if (!pickMode(e) && !state.selMode) unpin(); return; }
+    handlePointActivate(sorted[i].uid, pickMode(e), e.clientX, e.clientY);
   });
 }
 
@@ -5358,11 +6266,12 @@ function gridIndexAt(canvas, e, n) {
   return (idx >= 0 && idx < n) ? idx : -1;
 }
 function attachCanvasClick(canvas, sorted, indexAt) {
-  canvas.style.cursor = 'pointer';
+  canvas.style.cursor = state.selMode ? 'crosshair' : 'pointer';
   canvas.addEventListener('click', e => {
+    if (justBanded(vizContainer)) return;     // that was the end of a box
     const i = indexAt(canvas, e, sorted.length);
     if (i < 0 || i >= sorted.length) return;
-    handlePointActivate(sorted[i].uid, e.shiftKey || e.metaKey, e.clientX, e.clientY);
+    handlePointActivate(sorted[i].uid, pickMode(e), e.clientX, e.clientY);
   });
 }
 
@@ -5569,7 +6478,8 @@ function syncToolbar() {
   $('wheelRadiusGroup').style.display = solid ? 'none' : '';
   $('wheelPaintGroup').style.display  = solid ? 'none' : '';
   $('wheelChromeGroup').style.display = solid ? 'none' : '';
-  $('wheelResetGroup').style.display  = solid ? '' : 'none';   // a canvas wheel has no camera
+  /* Zoom moved to the control cluster on the plot, which greys out rather
+     than disappearing — `syncMapCtl` decides that now. */
 }
 
 /* ── Controls that would otherwise be live and inert ──────────────────
@@ -5595,15 +6505,8 @@ function syncControlState() {
                        : 'Cluster statistics need clustering switched on';
   if (!clustered) { $('statsDrawer').classList.remove('open'); sb.classList.remove('active'); }
 
-  const note = $('vizNote');
-  const msg = {
-    strip:   'Colours in sort order, one bar each, with a scale beneath.',
-    grid:    'Colours in sort order as tiles. Cluster outlines follow the border toggle.',
-    scatter: 'Every colour placed by the channels chosen above. Click a point to pin it.',
-    wheel:   'Angle and radius are chosen above. Click a point to pin it; shift-click to select.',
-  }[t] || '';
-  note.textContent = msg;
-  note.classList.toggle('visible', !!msg);
+  /* v3.3 — the line that said what each view is has gone. The hint in Now
+     showing says what to DO, which is the part that changes. */
 }
 /* ══ end VOMV2 · interaction ═════════════════════════════════════════ */
 
@@ -5626,6 +6529,7 @@ function updatePlotKey() {
   const spare = box.w - square;
   const show = state.sorted.length > 0 && needsSquare() && spare >= 200;
   el.classList.toggle('visible', show);
+  placeDock();
   if (!show) { el.innerHTML = ''; return; }
 
   const solid = state.wheelMode === '3d';
