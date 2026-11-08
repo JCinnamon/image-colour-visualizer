@@ -50,7 +50,7 @@
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /*__VOM_TOKENS_START__ — generated from shared/vom_shared.py, do not edit here */
+    /*__VOM_TOKENS_START__ */
 :root{
   --primary:#2c5f7a; --primary-dark:#1e4358;
   --accent:#1a9080; --accent-hover:#168070; --accent-light:#e6f4f1;
@@ -1086,7 +1086,7 @@
 .ctl-note.visible{display:block}
 /* ══ end VOMV2 ══════════════════════════════════════════════════════ */
 
-/*__VOM_RIBBON_START__ — generated from shared/vom_shared.py, do not edit here */
+/*__VOM_RIBBON_START__ */
 .vom-bar,.page-header .header-top{background:var(--vom-bar);color:#fff;display:flex;align-items:center;
   gap:1.25rem;padding:.5rem 1.5rem;flex-wrap:wrap;position:relative;z-index:60;flex:0 0 auto}
 .vom-wordmark,.wordmark{font-family:var(--vom-display);font-size:1.47rem;line-height:1;letter-spacing:.01em;
@@ -1126,7 +1126,7 @@
 @media(max-width:640px){.vom-bar,.page-header .header-top{padding-left:.9rem;padding-right:.9rem}}
 /*__VOM_RIBBON_END__*/
 
-/*__VOM_DROP_START__ — generated from shared/vom_shared.py, do not edit here */
+/*__VOM_DROP_START__ */
 #vomDropOverlay{position:fixed;inset:0;z-index:880;display:none;align-items:center;
   justify-content:center;background:rgba(22,50,63,.72);backdrop-filter:blur(2px)}
 #vomDropOverlay.show{display:flex}
@@ -1136,7 +1136,7 @@
 #vomDropOverlay .s{font-size:.85rem;color:var(--text-muted);margin-top:.35rem}
 /*__VOM_DROP_END__*/
 
-/*__VOM_PROJBAR_START__ — generated from shared/vom_shared.py, do not edit here */
+/*__VOM_PROJBAR_START__ */
 #vomProjBar{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;padding:.34rem 1.5rem;
   background:var(--bg-white);border-bottom:1px solid var(--border);font-size:.8rem;min-height:30px;
   font-family:var(--vom-font);color:var(--text)}
@@ -1680,7 +1680,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v3.4';   /* VOMV2 — bump with every change to this tool */
+const APP_VERSION = 'v3.5';   /* VOMV2 — bump with every change to this tool */
 
 // ═══════════════════════════════════════════════════════════
 // COLOR MATH
@@ -1983,14 +1983,65 @@ function parsePastedInput(text) {
 // CSV PARSING
 // ═══════════════════════════════════════════════════════════
 
+/* Reads quoted cells properly, so a comma, tab or line break inside quotes stays
+   in its cell and cannot shift the columns after it. The delimiter is chosen from
+   the header row only: a stray tab further down must not change how the file reads. */
 function parseCSVText(text) {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return { headers: [], rows: [] };
-  const delim = text.includes('\t') ? '\t' : ',';
-  const strip = s => s.trim().replace(/^"|"$/g, '');
-  const headers = lines[0].split(delim).map(strip);
-  const rows = lines.slice(1).map(line => line.split(delim).map(strip));
-  return { headers, rows };
+  text = text.replace(/^\uFEFF/, '').trim();
+  const n = text.length;
+  let tabs = 0, commas = 0, inQuote = false;
+  for (let i = 0; i < n; i++) {
+    const c = text.charCodeAt(i);
+    if (c === 34) inQuote = !inQuote;
+    else if (!inQuote) {
+      if (c === 10 || c === 13) break;
+      if (c === 9) tabs++; else if (c === 44) commas++;
+    }
+  }
+  const delim = tabs > commas ? 9 : 44;
+  const cellEnd = from => {
+    let e = from;
+    while (e < n) { const c = text.charCodeAt(e); if (c === delim || c === 10 || c === 13) break; e++; }
+    return e;
+  };
+
+  const records = [];
+  let row = [], i = 0;
+  while (i < n) {
+    let start = i;
+    while (start < n && text.charCodeAt(start) === 32) start++;
+    if (start < n && text.charCodeAt(start) === 34) {
+      let cell = '', k = start + 1;
+      for (;;) {
+        const q = text.indexOf('"', k);
+        if (q < 0) { cell += text.slice(k); k = n; break; }
+        cell += text.slice(k, q);
+        if (text.charCodeAt(q + 1) === 34) { cell += '"'; k = q + 2; }
+        else { k = q + 1; break; }
+      }
+      i = cellEnd(k);
+      row.push((cell + text.slice(k, i)).trim());
+    } else {
+      const e = cellEnd(i);
+      row.push(text.slice(i, e).trim());
+      i = e;
+    }
+    if (i >= n) break;
+    const c = text.charCodeAt(i);
+    i++;
+    if (c === delim) { if (i >= n) row.push(''); continue; }
+    if (c === 13 && text.charCodeAt(i) === 10) i++;
+    records.push(row); row = [];
+  }
+  if (row.length) records.push(row);
+
+  const filled = records.filter(r => r.length > 1 || r[0] !== '');
+  if (filled.length < 2) return { headers: [], rows: [] };
+  return { headers: filled[0], rows: filled.slice(1) };
+}
+
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function guessColorColumns(headers, rows) {
@@ -4403,7 +4454,7 @@ function handleCsvFile(file) {
     if (!headers.length) return;
     state.csvData = { headers, rows };
 
-    const opts = headers.map((h, i) => `<option value="${i}">${h || 'Column '+(i+1)}</option>`).join('');
+    const opts = headers.map((h, i) => `<option value="${i}">${escHtml(h || 'Column '+(i+1))}</option>`).join('');
     [colSingle, colR, colG, colB,
      $('colH_hsv'), $('colS_hsv'), $('colV_hsv'),
      $('colH_hsl'), $('colS_hsl'), $('colL_hsl'),
@@ -4468,7 +4519,7 @@ function handleCsvFile(file) {
     else if (hasRGB) setColMode('rgb');
     else             setColMode('single');
 
-    uploadArea.innerHTML = `<div class="icon">✅</div><div>${file.name} — ${rows.length.toLocaleString()} rows</div>`;
+    uploadArea.innerHTML = `<div class="icon">✅</div><div>${escHtml(file.name)} — ${rows.length.toLocaleString()} rows</div>`;
     csvPicker.classList.remove('hidden');
   };
   reader.readAsText(file);
@@ -6622,7 +6673,7 @@ window.addEventListener('resize', () => {
 </script>
 
 <script>
-/*__VOM_DROPJS_START__ — generated from shared/vom_shared.py, do not edit here */
+/*__VOM_DROPJS_START__ */
 /* A dropped FOLDER arrives as a directory entry, not as its files. */
 async function vomFilesFromDrop(dt){
   if(!dt) return [];
@@ -6760,7 +6811,7 @@ vomWireDrop({
 </script>
 
 <script>
-/*__VOM_PROJECTJS_START__ — generated from shared/vom_shared.py, do not edit here */
+/*__VOM_PROJECTJS_START__ */
 var VOM_DB_NAME='vom-suite', VOM_DB_VERSION=3;
 var _vomDb=null;
 
@@ -7758,7 +7809,7 @@ async function vomOpenOutput(p,handle,o){
 </script>
 
 <script>
-/*__VOM_PROJBARJS_START__ — generated from shared/vom_shared.py, do not edit here */
+/*__VOM_PROJBARJS_START__ */
 /* State a tool needs to know about the open project, and one call to send it
    an output. Every tool keeps its own download button untouched: a project
    that silently took over where files went would be worse than one that never
