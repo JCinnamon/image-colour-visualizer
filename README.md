@@ -10,12 +10,12 @@ and displayed across multiple visualization types.
 
 ## Features
 
-- **Multiple input formats** — hex, RGB, HSL, HSV (one per line), or CSV upload with flexible column mapping. Quoted cells can safely contain commas, tabs or line breaks
+- **Multiple input formats** — hex, RGB, HSL, HSV (one per line), or CSV upload with flexible column mapping. Quoted cells can safely contain commas, tabs or line breaks. If a file can't be read, or rows have the wrong number of columns, the page says so
 - **K-means clustering** — groups colours perceptually using LAB or HSL colour space, 2–30 clusters
 - **Sort options** — by cluster, hue, saturation, lightness, or perceptual luminance
 - **Four views** — Colour Strip, Colour Grid, Scatter (H×L, H×S, 3D H/S/L), and Colour Wheel
 - **Cluster statistics** — per-cluster stats panel
-- **Export** — PNG or CSV
+- **Export** — PNG or CSV, including PNGs of Scatter and the 3D wheel
 
 ## Usage
 

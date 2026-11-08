@@ -1680,7 +1680,7 @@
 <script>
 'use strict';
 
-const APP_VERSION = 'v3.5';   /* VOMV2 — bump with every change to this tool */
+const APP_VERSION = 'v3.6';   /* VOMV2 — bump with every change to this tool */
 
 // ═══════════════════════════════════════════════════════════
 // COLOR MATH
@@ -4451,7 +4451,12 @@ function handleCsvFile(file) {
   const reader = new FileReader();
   reader.onload = e => {
     const { headers, rows } = parseCSVText(e.target.result);
-    if (!headers.length) return;
+    if (!headers.length) {
+      state.csvData = null;
+      csvPicker.classList.add('hidden');
+      uploadArea.innerHTML = `<div class="icon">⚠️</div><div>Could not read ${escHtml(file.name)}. A CSV needs a header row and at least one row of data.</div>`;
+      return;
+    }
     state.csvData = { headers, rows };
 
     const opts = headers.map((h, i) => `<option value="${i}">${escHtml(h || 'Column '+(i+1))}</option>`).join('');
@@ -4519,8 +4524,15 @@ function handleCsvFile(file) {
     else if (hasRGB) setColMode('rgb');
     else             setColMode('single');
 
-    uploadArea.innerHTML = `<div class="icon">✅</div><div>${escHtml(file.name)} — ${rows.length.toLocaleString()} rows</div>`;
+    const uneven = rows.filter(r => r.length !== headers.length).length;
+    uploadArea.innerHTML = `<div class="icon">✅</div><div>${escHtml(file.name)} — ${rows.length.toLocaleString()} rows</div>`
+      + (uneven ? `<div style="color:var(--danger)">${uneven.toLocaleString()} row${uneven === 1 ? ' has' : 's have'} the wrong number of columns. Check the colours after loading.</div>` : '');
     csvPicker.classList.remove('hidden');
+  };
+  reader.onerror = () => {
+    state.csvData = null;
+    csvPicker.classList.add('hidden');
+    uploadArea.innerHTML = `<div class="icon">⚠️</div><div>Could not open ${escHtml(file.name)}. Try choosing the file again.</div>`;
   };
   reader.readAsText(file);
 }
@@ -5631,12 +5643,28 @@ function renderCurrentViz() {
 }
 
 // ─── Export ───
-btnExportPNG.addEventListener('click', () => {
-  if (state.vizType === 'scatter') {
-    Plotly.downloadImage($('plotlyDiv'), { format: 'png', filename: 'colour-scatter', width: 1200, height: 700 });
+function savePng(blob, name, view) {
+  if (typeof vomSendOutput === 'function') { vomSendOutput(blob, name, { view }); return; }
+  const l = document.createElement('a');
+  l.download = name; l.href = URL.createObjectURL(blob); l.click();
+}
+btnExportPNG.addEventListener('click', async () => {
+  // Scatter and the 3D wheel are drawn by Plotly, not on the page's canvas.
+  const solid = state.vizType === 'wheel' && state.wheelMode === '3d';
+  if (state.vizType === 'scatter' || solid) {
+    const div = $('plotlyDiv');
+    const view = solid ? 'wheel-3d' : 'scatter';
+    try {
+      if (typeof Plotly === 'undefined' || !div.data || !div.data.length) throw new Error('the plot has not been drawn yet');
+      const url = await Plotly.toImage(div, { format: 'png', width: 1200, height: 700 });
+      const blob = await (await fetch(url)).blob();
+      savePng(blob, `colour-${view}.png`, view);
+    } catch (e) {
+      alert('Could not save this plot as a PNG: ' + ((e && e.message) || 'unknown error') + '.');
+    }
     return;
   }
-  $('vizCanvas').toBlob(function(b){ if (typeof vomSendOutput === 'function') vomSendOutput(b, `colour-${state.vizType}.png`, { view: state.vizType }); else { const l = document.createElement('a'); l.download = `colour-${state.vizType}.png`; l.href = URL.createObjectURL(b); l.click(); } }, 'image/png');
+  $('vizCanvas').toBlob(b => savePng(b, `colour-${state.vizType}.png`, state.vizType), 'image/png');
 });
 
 /* One row per colour and one row per cluster, in two files. They used to
